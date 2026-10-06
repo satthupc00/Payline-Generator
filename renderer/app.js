@@ -1,5 +1,5 @@
 import { buildGridLayout } from './modules/grid.js';
-import { buildCurve, computeTangents, computeLeadExtensions, getHandleVectors, computeAutoTangents } from './modules/spline.js';
+import { buildCurve, buildRigSamples, computeTangents, getHandleVectors, computeAutoTangents } from './modules/spline.js';
 import { buildRibbonMesh, skinVertices } from './modules/mesh.js';
 import { packFrames, buildAtlasText, pageFileName } from './modules/atlasPacker.js';
 import { buildSpineJson } from './modules/spineExport.js';
@@ -38,6 +38,26 @@ function effectiveBoneCount() {
   return snapBoneCountToReels(n, reels);
 }
 
+// Straight lead-in / lead-out lines at both ends of the payline, each ending
+// in an end bone. Their length is set per side in Grid config, from 0 (end
+// bone sits on the first/last reel point) up to one cell size (the default).
+const END_BONES = 2;
+function maxLeadLength(cfg = state.gridConfig) {
+  return Math.max(cfg.cellW, cfg.cellH);
+}
+function clampLead(v, cfg) {
+  const max = maxLeadLength(cfg);
+  if (v == null || !Number.isFinite(Number(v))) return max;
+  return Math.max(0, Math.min(max, Number(v)));
+}
+function leadLengths() {
+  return { leadIn: clampLead(state.gridConfig.leadIn), leadOut: clampLead(state.gridConfig.leadOut) };
+}
+function rigSamples(pattern, pts, curveBones) {
+  const { leadIn, leadOut } = leadLengths();
+  return buildRigSamples(pts, pattern.tension / 100, curveBones, pattern.tangentOverrides, leadIn, leadOut);
+}
+
 const state = {
   gridConfig: {
     reels: 5,
@@ -45,7 +65,9 @@ const state = {
     cellW: 90, cellH: 90, gap: 6,
     gridType: 'straight',
     staggerOffset: 20,
-    strokeColor: '#4a2f7a'
+    strokeColor: '#4a2f7a',
+    leadIn: null,   // px; null = max (one cell size)
+    leadOut: null
   },
   patterns: [],       // { id, name, points: [rowIndex per reel] (or null), tension, warn }
   activePatternId: null,
@@ -227,19 +249,27 @@ function drawGrid() {
       ctx.stroke();
 
       // straight lead-in / lead-out, flat at the same height (y) as the
-      // first/last reel point, running off the grid's left/right edge —
-      // same neon style as the curve
-      const extendLength = Math.max(state.gridConfig.cellW, state.gridConfig.cellH) * 1.0;
-      const ext = computeLeadExtensions(pts, extendLength);
-      if (ext) {
-        ctx.beginPath();
-        ctx.moveTo(ext.leadIn.x, ext.leadIn.y);
-        ctx.lineTo(pts[0].x, pts[0].y);
-        ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.lineTo(ext.leadOut.x, ext.leadOut.y);
-        ctx.stroke();
-      }
+      // first/last reel point, ending in the end bones — same neon style
+      // as the curve; length per side comes from Grid config
+      const { leadIn, leadOut } = leadLengths();
+      const endIn = { x: pts[0].x - leadIn, y: pts[0].y };
+      const endOut = { x: pts[pts.length - 1].x + leadOut, y: pts[pts.length - 1].y };
+      ctx.beginPath();
+      ctx.moveTo(endIn.x, endIn.y);
+      ctx.lineTo(pts[0].x, pts[0].y);
+      ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      ctx.lineTo(endOut.x, endOut.y);
+      ctx.stroke();
       ctx.shadowBlur = 0;
+
+      // end bones: hollow rings so they read differently from reel points
+      ctx.strokeStyle = pattern.warn ? '#ffcc33' : '#35e4f5';
+      ctx.lineWidth = 1.5;
+      [endIn, endOut].forEach((b) => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+      });
 
       const selected = pattern.selectedReels || [];
       pts.forEach((p, i) => {
@@ -773,9 +803,10 @@ function rebuildMesh() {
   syncBoneSliderMin();
   if (!state.flipbook.length) { state.mesh = null; return; }
   const first = state.flipbook[0].img;
-  state.mesh = buildRibbonMesh(first.naturalWidth, first.naturalHeight, effectiveBoneCount(), state.density, state.gridRows);
-  el('boneCountVal').textContent = state.mesh.boneCount;
-  if (state.boneAuto) el('boneCountSlider').value = state.mesh.boneCount;
+  const curveBones = effectiveBoneCount();
+  state.mesh = buildRibbonMesh(first.naturalWidth, first.naturalHeight, curveBones + END_BONES, state.density, state.gridRows);
+  el('boneCountVal').textContent = curveBones;
+  if (state.boneAuto) el('boneCountSlider').value = curveBones;
 }
 
 function syncBoneSliderMin() {
@@ -852,6 +883,10 @@ function openGridConfigModal() {
   el('cfgCellH').value = state.gridConfig.cellH;
   el('cfgGap').value = state.gridConfig.gap;
   el('cfgStrokeColor').value = state.gridConfig.strokeColor || '#4a2f7a';
+  const { leadIn, leadOut } = leadLengths();
+  el('cfgLeadIn').value = leadIn;
+  el('cfgLeadOut').value = leadOut;
+  syncLeadSliders();
   el('cfgStaggerRow').style.display = state.gridConfig.gridType === 'staggered' ? 'flex' : 'none';
   renderReelRowsConfig();
   el('gridConfigModal').style.display = 'flex';
@@ -871,6 +906,31 @@ function renderReelRowsConfig() {
   });
 }
 
+// The end-bone sliders go from 0 (on the reel point) to one cell size, so
+// their max follows the cell size typed in the same dialog.
+function cfgFromInputs() {
+  return { cellW: numOr(el('cfgCellW').value, 90, 1), cellH: numOr(el('cfgCellH').value, 90, 1) };
+}
+function syncLeadSliders() {
+  const max = maxLeadLength(cfgFromInputs());
+  ['cfgLeadIn', 'cfgLeadOut'].forEach((id) => {
+    const input = el(id);
+    const wasMax = Number(input.value) >= Number(input.max);
+    input.max = String(max);
+    if (wasMax || Number(input.value) > max) input.value = String(max);
+    el(id + 'Val').textContent = input.value;
+  });
+}
+['cfgLeadIn', 'cfgLeadOut'].forEach((id) => el(id).addEventListener('input', syncLeadSliders));
+['cfgCellW', 'cfgCellH'].forEach((id) => el(id).addEventListener('input', syncLeadSliders));
+
+// Number from an input, keeping 0 (a plain `|| fallback` turned a 0 gap into 6).
+function numOr(value, fallback, min = 0) {
+  const n = Number(value);
+  if (value === '' || !Number.isFinite(n)) return fallback;
+  return Math.max(min, n);
+}
+
 el('btnGridConfig').addEventListener('click', openGridConfigModal);
 el('cfgReels').addEventListener('input', renderReelRowsConfig);
 el('btnAddReel').addEventListener('click', () => {
@@ -888,12 +948,14 @@ el('btnApplyGridConfig').addEventListener('click', () => {
   state.gridConfig = {
     reels,
     rowsPerReel,
-    cellW: Number(el('cfgCellW').value) || 90,
-    cellH: Number(el('cfgCellH').value) || 90,
-    gap: Number(el('cfgGap').value) || 6,
+    cellW: numOr(el('cfgCellW').value, 90, 1),
+    cellH: numOr(el('cfgCellH').value, 90, 1),
+    gap: numOr(el('cfgGap').value, 6),
     gridType: el('cfgGridType').value,
     staggerOffset: Number(el('cfgStaggerOffset').value) || 0,
-    strokeColor: el('cfgStrokeColor').value || '#4a2f7a'
+    strokeColor: el('cfgStrokeColor').value || '#4a2f7a',
+    leadIn: numOr(el('cfgLeadIn').value, null),
+    leadOut: numOr(el('cfgLeadOut').value, null)
   };
   // reset points (and their tangent overrides) length for patterns
   state.patterns.forEach((p) => {
@@ -937,7 +999,41 @@ el('btnConfirmSavePreset').addEventListener('click', async () => {
 el('btnLoadPreset').addEventListener('click', () => {
   const name = el('presetSelect').value;
   if (!name || !state.presets[name]) return;
-  state.gridConfig = JSON.parse(JSON.stringify(state.presets[name]));
+  applyGridConfig(state.presets[name]);
+});
+
+// Export every saved preset into one .json file (to back up or send to someone).
+el('btnExportPresetFile').addEventListener('click', async () => {
+  if (!Object.keys(state.presets).length) return toast('Chưa có preset nào để xuất.');
+  const res = await window.paylineAPI.exportPresetFile({ presets: state.presets });
+  if (res && res.ok) toast(`Đã xuất ${Object.keys(state.presets).length} preset ra file.`);
+  else if (res && res.error) toast(`Lỗi xuất preset: ${res.error}`);
+});
+
+// Import presets from a file made by "Xuất file". Presets with the same name are replaced.
+el('btnImportPresetFile').addEventListener('click', async () => {
+  const res = await window.paylineAPI.importPresetFile();
+  if (!res || res.canceled) return;
+  if (!res.ok) return toast(`Lỗi nhập preset: ${res.error}`);
+  const incoming = Object.entries(res.presets || {}).filter(([n, cfg]) => n && isValidGridConfig(cfg));
+  if (!incoming.length) return toast('File không có preset hợp lệ.');
+  incoming.forEach(([n, cfg]) => { state.presets[n] = cfg; });
+  await window.paylineAPI.savePresets(state.presets);
+  await refreshPresetSelect();
+  el('presetSelect').value = incoming[0][0];
+  toast(`Đã nhập ${incoming.length} preset. Chọn preset rồi bấm Load để dùng.`);
+});
+
+function isValidGridConfig(cfg) {
+  return cfg && typeof cfg === 'object' &&
+    Number.isInteger(cfg.reels) && cfg.reels >= 1 &&
+    Array.isArray(cfg.rowsPerReel) && cfg.rowsPerReel.length >= 1 &&
+    Number.isFinite(cfg.cellW) && Number.isFinite(cfg.cellH);
+}
+
+function applyGridConfig(cfg) {
+  state.gridConfig = { ...JSON.parse(JSON.stringify(cfg)) };
+  if (!Number.isFinite(state.gridConfig.gap)) state.gridConfig.gap = 6;
   state.patterns.forEach((p) => {
     const pts = new Array(state.gridConfig.reels).fill(null);
     p.points.forEach((v, i) => { if (i < state.gridConfig.reels) pts[i] = v; });
@@ -950,7 +1046,7 @@ el('btnLoadPreset').addEventListener('click', () => {
   });
   syncBoneSliderMin();
   renderAll();
-});
+}
 
 // ==================================================================
 // Preview rendering (triangle-warp skinned flipbook)
@@ -992,7 +1088,7 @@ function drawPreview() {
     return;
   }
 
-  const { samples } = buildCurve(pts, pattern.tension / 100, state.mesh.boneCount, pattern.tangentOverrides);
+  const { samples } = rigSamples(pattern, pts, state.mesh.boneCount - END_BONES);
   // fit curve bbox into preview canvas
   const xs = samples.map((s) => s.x), ys = samples.map((s) => s.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -1173,8 +1269,9 @@ el('btnExportAll').addEventListener('click', async () => {
     name: p.name,
     points: patternPoints(p),
     tension: p.tension / 100,
-    sampleCount: state.mesh.boneCount,
-    tangentOverrides: p.tangentOverrides
+    sampleCount: state.mesh.boneCount - END_BONES,
+    tangentOverrides: p.tangentOverrides,
+    ...leadLengths()
   }));
 
   const { json } = buildSpineJson({

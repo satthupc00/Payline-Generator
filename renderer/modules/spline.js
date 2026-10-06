@@ -15,8 +15,12 @@ export function computeTangents(points) {
     if (i === 0) { a = points[0]; b = points[Math.min(1, n - 1)]; }
     else if (i === n - 1) { a = points[n - 2]; b = points[n - 1]; }
     else { a = points[i - 1]; b = points[i + 1]; }
-    angles.push(Math.atan2(b.y - a.y, b.x - a.x));
+    angles.push(Math.hypot(b.x - a.x, b.y - a.y) < 1e-6 ? null : Math.atan2(b.y - a.y, b.x - a.x));
   }
+  // An end bone with a 0 px lead sits on its neighbour (no direction of its
+  // own) — give it the neighbour's angle so the mesh tip isn't twisted.
+  for (let i = 0; i < n; i++) if (angles[i] === null) angles[i] = angles[i === 0 ? 1 : i - 1] ?? 0;
+  for (let i = n - 1; i >= 0; i--) if (angles[i] === null) angles[i] = 0;
   return angles;
 }
 
@@ -210,6 +214,27 @@ export function computeLeadExtensions(points, extendLength) {
   return {
     leadIn: { x: first.x - extendLength, y: first.y },
     leadOut: { x: last.x + extendLength, y: last.y }
+  };
+}
+
+// Full list of bone positions for the rig: one end bone on the lead-in line
+// (left of the first reel), the curve samples, and one end bone on the
+// lead-out line (right of the last reel). The end bones sit `leadInLen` /
+// `leadOutLen` px away from the first/last reel point at the same height,
+// so the mesh is pulled out along the straight lead lines too. A length of
+// 0 puts the end bone right on its neighbouring reel point.
+// Returns { samples, maxTurnAngle } with samples.length === curveBoneCount + 2
+// (curveBoneCount is raised to the reel count like buildCurve does).
+export function buildRigSamples(points, tension, curveBoneCount, tangentOverrides, leadInLen, leadOutLen) {
+  const { samples, maxTurnAngle } = buildCurve(points, tension, curveBoneCount, tangentOverrides);
+  const first = points[0], last = points[points.length - 1];
+  return {
+    samples: [
+      { x: first.x - (leadInLen || 0), y: first.y },
+      ...samples,
+      { x: last.x + (leadOutLen || 0), y: last.y }
+    ],
+    maxTurnAngle
   };
 }
 

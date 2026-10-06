@@ -155,6 +155,40 @@ ipcMain.handle('presets:load', async () => {
   }
 });
 
+// Export / import grid presets as a .json file so they can be backed up or shared.
+ipcMain.handle('presets:exportFile', async (evt, { presets }) => {
+  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
+  const res = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: 'payline-grid-presets.json',
+    filters: [{ name: 'Grid presets', extensions: ['json'] }]
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(res.filePath, JSON.stringify({ type: 'mondiro-payline-presets', version: 1, presets }, null, 2));
+    return { ok: true, filePath: res.filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('presets:importFile', async () => {
+  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'Grid presets', extensions: ['json'] }]
+  });
+  if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+  try {
+    const data = JSON.parse(fs.readFileSync(res.filePaths[0], 'utf-8'));
+    // Accepts a file from "Xuất file" ({ presets: {...} }) or a bare { name: config } map.
+    const presets = data && typeof data.presets === 'object' ? data.presets : data;
+    if (!presets || typeof presets !== 'object' || Array.isArray(presets)) throw new Error('File không đúng định dạng preset.');
+    return { ok: true, presets };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
 ipcMain.handle('presets:save', async (evt, presets) => {
   if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
   try {
