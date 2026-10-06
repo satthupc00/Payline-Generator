@@ -1,7 +1,7 @@
 {
   "name": "mondiro-payline-generator",
   "productName": "Mondiro Payline Generator",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Standalone tool to generate slot-game payline curve animations and export to Spine 3.7.94 JSON",
   "main": "main.js",
   "author": "Mondiro",
