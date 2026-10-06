@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<title>Mondiro Payline Generator v2.0.0</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">◈ <span class="brand-mondiro">Mondiro</span> <span class="brand-rest">Payline Generator</span></div>
+    <div class="actions">
+      <button id="btnGridConfig">⛶ Grid config</button>
+      <button id="btnImportFlipbook">📁 Import flipbook (folder)</button>
+      <button id="btnImportBg">🌄 Background</button>
+      <button id="btnEditBg" style="display:none;">✎ Edit background</button>
+      <button id="btnToggleBg" style="display:none;">👁 Ẩn nền</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- LEFT: pattern list -->
+    <div class="panel left">
+      <h3>Patterns <span id="btnAddPattern" style="cursor:pointer;color:var(--accent-cyan);font-size:15px;">＋</span></h3>
+      <div class="pattern-list" id="patternList"></div>
+
+      <div class="section" id="bgBrightnessSection" style="display:none;">
+        <div class="row" style="display:flex;align-items:center;justify-content:space-between;">
+          <label class="field-label" style="margin:0;">Điều chỉnh ảnh nền</label>
+          <span id="btnResetBgAdjust" style="cursor:pointer;font-size:11px;color:var(--accent-cyan);">↺ Reset</span>
+        </div>
+        <label class="field-label" style="margin-top:6px;">Độ mờ ảnh nền: <span id="bgOpacityVal">100</span>%</label>
+        <input type="range" id="bgOpacity" min="0" max="100" value="100" step="1" />
+        <label class="field-label" style="margin-top:8px;">Độ sáng ảnh nền: <span id="bgBrightnessVal">0</span></label>
+        <input type="range" id="bgBrightness" min="-100" max="100" value="0" step="1" />
+      </div>
+
+      <div class="section" style="margin-top:auto;">
+        <h3>Grid presets</h3>
+        <select id="presetSelect"></select>
+        <div class="row" style="display:flex;gap:6px;margin-top:6px;">
+          <button id="btnSavePreset" style="flex:1;">Save</button>
+          <button id="btnLoadPreset" style="flex:1;">Load</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: grid editor + preview -->
+    <div class="center">
+      <div class="grid-stage" id="gridStage">
+        <canvas id="gridCanvas"></canvas>
+        <div id="bgEditControls" style="display:none;position:absolute;top:10px;right:10px;gap:6px;">
+          <button class="accent" id="btnBgDone">✓ Done</button>
+          <button class="ghost" id="btnBgCancel">Cancel</button>
+        </div>
+      </div>
+      <div class="resize-handle" id="previewResizeHandle" title="Kéo để đổi kích thước khung preview"></div>
+      <div class="preview-strip" id="previewStrip">
+        <div class="row">
+          <strong style="font-size:11px;color:var(--text-secondary);">PREVIEW</strong>
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-secondary);margin-left:10px;">
+            <input type="checkbox" id="toggleMeshWire" style="width:auto;" /> Mesh
+          </label>
+          <label id="meshOpacityRow" style="display:none;align-items:center;gap:4px;font-size:11px;color:var(--text-secondary);">
+            Opacity
+            <input type="range" id="meshOpacity" min="0" max="100" value="70" step="1" style="width:70px;" />
+            <span id="meshOpacityVal" style="display:inline-block;width:26px;text-align:right;">70</span>%
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--text-secondary);">
+            <input type="checkbox" id="toggleBones" style="width:auto;" /> Bone
+          </label>
+          <span class="spacer"></span>
+          <span class="hint" id="frameLabel">frame 0 / 0</span>
+        </div>
+        <div class="preview-canvas-wrap">
+          <canvas id="previewCanvas"></canvas>
+        </div>
+        <div class="row">
+          <button class="icon-btn" id="btnPlayPause">▶</button>
+          <input type="range" id="scrubBar" min="0" max="0" value="0" step="1" style="flex:1;" />
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: properties -->
+    <div class="panel right">
+      <div class="section">
+        <label class="field-label">Tên skeleton (khác tên animation)</label>
+        <input type="text" id="skeletonName" value="PayLine_Skeleton" />
+      </div>
+
+      <div class="section">
+        <label class="field-label">Base animation name</label>
+        <input type="text" id="baseName" value="VFX_Playline" />
+        <div class="hint">Xuất ra: <span id="baseNamePreview">VFX_Playline_01, _02, ...</span></div>
+      </div>
+
+      <div class="section">
+        <label class="field-label">Tension (độ mượt đường cong): <span id="tensionVal">55</span>%</label>
+        <input type="range" id="tension" min="0" max="100" value="55" />
+      </div>
+
+      <div class="section">
+        <div class="hint">Click để hiển thị đường tay cầm<br />Giữ Shift để chiều chỉnh 1 bên tay cầm<br />Double Click lên tay cầm để reset lại thành auto</div>
+      </div>
+
+      <div class="section">
+        <label class="field-label">Mật độ mesh (số cột chia hình): <span id="densityVal">40</span></label>
+        <input type="range" id="density" min="8" max="200" value="40" step="1" />
+        <div class="hint">Chỉ ảnh hưởng độ mượt hiển thị texture, không sinh thêm bone.</div>
+      </div>
+
+      <div class="section">
+        <label class="field-label">Số hàng chia mesh (theo chiều cao): <span id="gridRowsVal">2</span></label>
+        <input type="range" id="gridRows" min="2" max="20" value="2" step="1" />
+        <div class="hint">Tăng lên nếu vẫn thấy gãy ở khúc cong gắt (tối đa 20 hàng).</div>
+      </div>
+
+      <div class="section">
+        <div class="row" style="display:flex;align-items:center;justify-content:space-between;">
+          <label class="field-label" style="margin:0;">Số bone điều khiển đường cong: <span id="boneCountVal">24</span></label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-secondary);">
+            <input type="checkbox" id="boneAuto" style="width:auto;" /> Auto
+          </label>
+        </div>
+        <input type="range" id="boneCountSlider" min="5" max="200" value="24" step="1" style="margin-top:6px;" />
+        <div class="hint">Auto: tự tính theo độ gắt (góc bẻ) của các pattern hiện có.</div>
+      </div>
+
+      <div id="warningBox" class="warning-box" style="display:none;">
+        <span>⚠</span>
+        <span id="warningText"></span>
+      </div>
+
+      <div class="section" style="margin-top:auto;">
+        <label class="field-label">Output folder</label>
+        <div class="row" style="display:flex;gap:6px;">
+          <input type="text" id="outputPath" placeholder="Chọn thư mục..." readonly />
+          <button id="btnChooseOutput">...</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary);margin-top:8px;">
+          <input type="checkbox" id="trimAtlas" checked style="width:auto;" /> Trim khoảng trống trong atlas khi export
+        </label>
+        <button class="primary" id="btnExportAll" style="width:100%;margin-top:10px;">⬇ Export all (<span id="exportCount">0</span>)</button>
+      </div>
+
+      <div class="app-footer">Created by Mondiro</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Grid config modal -->
+<div class="modal-overlay" id="gridConfigModal" style="display:none;">
+  <div class="modal">
+    <h2>Grid config</h2>
+    <div class="row">
+      <label class="field-label">Số reel</label>
+      <input type="number" id="cfgReels" min="1" max="20" value="5" style="flex:1;" />
+      <button id="btnAddReel" class="icon-btn" title="Thêm 1 reel">＋ reel</button>
+    </div>
+    <div class="row">
+      <label class="field-label">Kiểu lưới</label>
+      <select id="cfgGridType">
+        <option value="straight">Thẳng hàng</option>
+        <option value="staggered">So le</option>
+      </select>
+    </div>
+    <div class="row" id="cfgStaggerRow" style="display:none;">
+      <label class="field-label">Độ lệch so le (px)</label>
+      <input type="number" id="cfgStaggerOffset" value="20" />
+    </div>
+    <div class="row">
+      <label class="field-label">Kích thước ô (WxH)</label>
+      <input type="number" id="cfgCellW" value="90" style="width:70px;" />
+      <input type="number" id="cfgCellH" value="90" style="width:70px;" />
+    </div>
+    <div class="row">
+      <label class="field-label">Khoảng cách ô (px)</label>
+      <input type="number" id="cfgGap" value="6" />
+    </div>
+    <div class="row">
+      <label class="field-label">Màu viền ô (stroke)</label>
+      <input type="color" id="cfgStrokeColor" value="#4a2f7a" style="width:60px;height:30px;padding:2px;" />
+    </div>
+    <div class="hint">Số hàng mỗi reel (VD megaways: 3,4,5,4,3):</div>
+    <div class="reel-rows-config" id="reelRowsConfig"></div>
+    <div class="actions">
+      <button class="ghost" id="btnCancelGridConfig">Huỷ</button>
+      <button class="accent" id="btnApplyGridConfig">Áp dụng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save preset modal -->
+<div class="modal-overlay" id="savePresetModal" style="display:none;">
+  <div class="modal">
+    <h2>Lưu grid preset</h2>
+    <div class="row">
+      <label class="field-label">Tên preset</label>
+      <input type="text" id="presetNameInput" placeholder="Megaways_5x" />
+    </div>
+    <div class="actions">
+      <button class="ghost" id="btnCancelSavePreset">Huỷ</button>
+      <button class="accent" id="btnConfirmSavePreset">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
