@@ -38,24 +38,34 @@ function effectiveBoneCount() {
   return snapBoneCountToReels(n, reels);
 }
 
-// Straight lead-in / lead-out lines at both ends of the payline, each ending
-// in an end bone. Their length is set per side in Grid config, from 0 (end
-// bone sits on the first/last reel point) up to one cell size (the default).
-const END_BONES = 2;
+// Straight lead-in / lead-out lines at both ends of the payline. Their
+// length (same for both ends) is set in Grid config, from 0 (end bone sits on
+// the first/last reel point) up to one cell size (the default).
 function maxLeadLength(cfg = state.gridConfig) {
   return Math.max(cfg.cellW, cfg.cellH);
 }
-function clampLead(v, cfg) {
+function leadLength(cfg = state.gridConfig) {
+  // older presets stored one value per side (leadIn / leadOut)
+  const v = cfg.lead ?? cfg.leadIn ?? cfg.leadOut;
   const max = maxLeadLength(cfg);
   if (v == null || !Number.isFinite(Number(v))) return max;
   return Math.max(0, Math.min(max, Number(v)));
 }
-function leadLengths() {
-  return { leadIn: clampLead(state.gridConfig.leadIn), leadOut: clampLead(state.gridConfig.leadOut) };
+// Total bones in the rig: the curve bones from the slider, plus bones along
+// each lead line at the same spacing (so the texture is spread evenly, not
+// stretched at the ends), plus the 2 end bones. Spacing is estimated from the
+// grid width so every pattern shares one skeleton.
+function leadBonesPerSide(curveBones, cfg = state.gridConfig) {
+  const span = Math.max(1, (cfg.reels - 1) * (cfg.cellW + cfg.gap));
+  const spacing = span / Math.max(1, curveBones - 1);
+  return Math.round(leadLength(cfg) / spacing);
 }
-function rigSamples(pattern, pts, curveBones) {
-  const { leadIn, leadOut } = leadLengths();
-  return buildRigSamples(pts, pattern.tension / 100, curveBones, pattern.tangentOverrides, leadIn, leadOut);
+function rigBoneCount(curveBones) {
+  // at least the end bone on each side, also when the lead length is 0
+  return curveBones + 2 * Math.max(1, leadBonesPerSide(curveBones));
+}
+function rigSamples(pattern, pts, totalBones) {
+  return buildRigSamples(pts, pattern.tension / 100, totalBones, pattern.tangentOverrides, leadLength());
 }
 
 const state = {
@@ -66,8 +76,7 @@ const state = {
     gridType: 'straight',
     staggerOffset: 20,
     strokeColor: '#4a2f7a',
-    leadIn: null,   // px; null = max (one cell size)
-    leadOut: null
+    lead: null      // px, both ends; null = max (one cell size)
   },
   patterns: [],       // { id, name, points: [rowIndex per reel] (or null), tension, warn }
   activePatternId: null,
@@ -251,9 +260,9 @@ function drawGrid() {
       // straight lead-in / lead-out, flat at the same height (y) as the
       // first/last reel point, ending in the end bones — same neon style
       // as the curve; length per side comes from Grid config
-      const { leadIn, leadOut } = leadLengths();
-      const endIn = { x: pts[0].x - leadIn, y: pts[0].y };
-      const endOut = { x: pts[pts.length - 1].x + leadOut, y: pts[pts.length - 1].y };
+      const lead = leadLength();
+      const endIn = { x: pts[0].x - lead, y: pts[0].y };
+      const endOut = { x: pts[pts.length - 1].x + lead, y: pts[pts.length - 1].y };
       ctx.beginPath();
       ctx.moveTo(endIn.x, endIn.y);
       ctx.lineTo(pts[0].x, pts[0].y);
@@ -698,6 +707,7 @@ function renderPatternList() {
     patternListEl.appendChild(row);
   });
   el('exportCount').textContent = state.patterns.filter((p) => patternPoints(p)).length;
+  el('boneTotalVal').textContent = rigBoneCount(effectiveBoneCount());
   el('baseNamePreview').textContent = `${state.baseName}_01, _02, ...`;
 }
 
@@ -804,7 +814,7 @@ function rebuildMesh() {
   if (!state.flipbook.length) { state.mesh = null; return; }
   const first = state.flipbook[0].img;
   const curveBones = effectiveBoneCount();
-  state.mesh = buildRibbonMesh(first.naturalWidth, first.naturalHeight, curveBones + END_BONES, state.density, state.gridRows);
+  state.mesh = buildRibbonMesh(first.naturalWidth, first.naturalHeight, rigBoneCount(curveBones), state.density, state.gridRows, leadLength() <= 0);
   el('boneCountVal').textContent = curveBones;
   if (state.boneAuto) el('boneCountSlider').value = curveBones;
 }
@@ -883,10 +893,9 @@ function openGridConfigModal() {
   el('cfgCellH').value = state.gridConfig.cellH;
   el('cfgGap').value = state.gridConfig.gap;
   el('cfgStrokeColor').value = state.gridConfig.strokeColor || '#4a2f7a';
-  const { leadIn, leadOut } = leadLengths();
-  el('cfgLeadIn').value = leadIn;
-  el('cfgLeadOut').value = leadOut;
-  syncLeadSliders();
+  el('cfgLead').max = String(maxLeadLength());
+  el('cfgLead').value = leadLength();
+  syncLeadSlider();
   el('cfgStaggerRow').style.display = state.gridConfig.gridType === 'staggered' ? 'flex' : 'none';
   renderReelRowsConfig();
   el('gridConfigModal').style.display = 'flex';
@@ -906,23 +915,21 @@ function renderReelRowsConfig() {
   });
 }
 
-// The end-bone sliders go from 0 (on the reel point) to one cell size, so
-// their max follows the cell size typed in the same dialog.
+// The end-bone slider goes from 0 (on the reel point) to one cell size, so
+// its max follows the cell size typed in the same dialog.
 function cfgFromInputs() {
   return { cellW: numOr(el('cfgCellW').value, 90, 1), cellH: numOr(el('cfgCellH').value, 90, 1) };
 }
-function syncLeadSliders() {
+function syncLeadSlider() {
+  const input = el('cfgLead');
   const max = maxLeadLength(cfgFromInputs());
-  ['cfgLeadIn', 'cfgLeadOut'].forEach((id) => {
-    const input = el(id);
-    const wasMax = Number(input.value) >= Number(input.max);
-    input.max = String(max);
-    if (wasMax || Number(input.value) > max) input.value = String(max);
-    el(id + 'Val').textContent = input.value;
-  });
+  const wasMax = Number(input.value) >= Number(input.max);
+  input.max = String(max);
+  if (wasMax || Number(input.value) > max) input.value = String(max);
+  el('cfgLeadVal').textContent = input.value;
 }
-['cfgLeadIn', 'cfgLeadOut'].forEach((id) => el(id).addEventListener('input', syncLeadSliders));
-['cfgCellW', 'cfgCellH'].forEach((id) => el(id).addEventListener('input', syncLeadSliders));
+el('cfgLead').addEventListener('input', syncLeadSlider);
+['cfgCellW', 'cfgCellH'].forEach((id) => el(id).addEventListener('input', syncLeadSlider));
 
 // Number from an input, keeping 0 (a plain `|| fallback` turned a 0 gap into 6).
 function numOr(value, fallback, min = 0) {
@@ -954,8 +961,7 @@ el('btnApplyGridConfig').addEventListener('click', () => {
     gridType: el('cfgGridType').value,
     staggerOffset: Number(el('cfgStaggerOffset').value) || 0,
     strokeColor: el('cfgStrokeColor').value || '#4a2f7a',
-    leadIn: numOr(el('cfgLeadIn').value, null),
-    leadOut: numOr(el('cfgLeadOut').value, null)
+    lead: numOr(el('cfgLead').value, null)
   };
   // reset points (and their tangent overrides) length for patterns
   state.patterns.forEach((p) => {
@@ -1088,7 +1094,7 @@ function drawPreview() {
     return;
   }
 
-  const { samples } = rigSamples(pattern, pts, state.mesh.boneCount - END_BONES);
+  const { samples } = rigSamples(pattern, pts, state.mesh.boneCount);
   // fit curve bbox into preview canvas
   const xs = samples.map((s) => s.x), ys = samples.map((s) => s.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
@@ -1269,9 +1275,9 @@ el('btnExportAll').addEventListener('click', async () => {
     name: p.name,
     points: patternPoints(p),
     tension: p.tension / 100,
-    sampleCount: state.mesh.boneCount - END_BONES,
+    sampleCount: state.mesh.boneCount,
     tangentOverrides: p.tangentOverrides,
-    ...leadLengths()
+    lead: leadLength()
   }));
 
   const { json } = buildSpineJson({

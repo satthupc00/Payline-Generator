@@ -1,8 +1,8 @@
 import { buildRigSamples, computeTangents } from './spline.js';
 
 // Builds a full Spine 3.7.94 skeleton JSON:
-//   bones: root -> pline -> p0..p(N-1)  (control bones, hose-rig; p0 and p(N-1)
-//          are the end bones on the straight lead-in / lead-out lines)
+//   bones: root -> pline -> p0..p(N-1)  (control bones, hose-rig, spread evenly
+//          over the lead-in line, the curve and the lead-out line)
 //   slots: pline (mesh flipbook)
 //   skins.default.pline: base mesh + linkedmesh per remaining frame
 //   animations: one per pattern — attachment cycling + control-bone translate
@@ -14,8 +14,8 @@ export function buildSpineJson({
   frameW, frameH,
   mesh,             // from buildRibbonMesh()
   gridCenter,       // {x,y} in grid-canvas pixel space treated as Spine origin
-  patterns,         // [{ id, name, points: [{x,y}...] (grid px, 1 per reel), tension, sampleCount, tangentOverrides, leadIn, leadOut }]
-                    // sampleCount = curve bones only; mesh.boneCount must be sampleCount + 2
+  patterns,         // [{ id, name, points: [{x,y}...] (grid px, 1 per reel), tension, sampleCount, tangentOverrides, lead }]
+                    // sampleCount = all bones incl. lead lines; must equal mesh.boneCount
   fps = 30,
   additiveBlend = true
 }) {
@@ -87,7 +87,7 @@ export function buildSpineJson({
 
   const animations = {};
   for (const pattern of patterns) {
-    const { samples, maxTurnAngle } = buildRigSamples(pattern.points, pattern.tension, pattern.sampleCount, pattern.tangentOverrides, pattern.leadIn, pattern.leadOut);
+    const { samples, maxTurnAngle } = buildRigSamples(pattern.points, pattern.tension, pattern.sampleCount, pattern.tangentOverrides, pattern.lead);
     warnings[pattern.id] = maxTurnAngle;
 
     const boneTimelines = {};

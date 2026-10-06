@@ -196,48 +196,6 @@ export function catmullRom(p0, p1, p2, p3, t, tension) {
   return hermite(p1, p2, m1, m2, t, tension);
 }
 
-// Straight lead-in / lead-out segments at the SAME HEIGHT (y) as the
-// first/last control point — a flat line running off the grid to the
-// left before the first reel, and off the grid to the right after the
-// last reel. This is purely a straight-line extension for
-// drawing/exporting the ends; it intentionally does NOT add extra
-// samples into buildCurve()'s output, so bone count / rig timing stay
-// exactly as configured.
-//
-// `extendLength` is an absolute distance in the same units as `points`
-// (grid pixel space) — pass something tied to cell size (e.g. ~1x cell
-// width) so it reliably clears the grid's edge.
-export function computeLeadExtensions(points, extendLength) {
-  if (!points || points.length < 1 || !extendLength) return null;
-  const first = points[0];
-  const last = points[points.length - 1];
-  return {
-    leadIn: { x: first.x - extendLength, y: first.y },
-    leadOut: { x: last.x + extendLength, y: last.y }
-  };
-}
-
-// Full list of bone positions for the rig: one end bone on the lead-in line
-// (left of the first reel), the curve samples, and one end bone on the
-// lead-out line (right of the last reel). The end bones sit `leadInLen` /
-// `leadOutLen` px away from the first/last reel point at the same height,
-// so the mesh is pulled out along the straight lead lines too. A length of
-// 0 puts the end bone right on its neighbouring reel point.
-// Returns { samples, maxTurnAngle } with samples.length === curveBoneCount + 2
-// (curveBoneCount is raised to the reel count like buildCurve does).
-export function buildRigSamples(points, tension, curveBoneCount, tangentOverrides, leadInLen, leadOutLen) {
-  const { samples, maxTurnAngle } = buildCurve(points, tension, curveBoneCount, tangentOverrides);
-  const first = points[0], last = points[points.length - 1];
-  return {
-    samples: [
-      { x: first.x - (leadInLen || 0), y: first.y },
-      ...samples,
-      { x: last.x + (leadOutLen || 0), y: last.y }
-    ],
-    maxTurnAngle
-  };
-}
-
 // Find the (x,y) at a given arc-length position along a dense polyline,
 // using its cumulative-length table `cum` (same length as `dense`).
 function pointAtArcLength(dense, cum, target) {
@@ -253,40 +211,15 @@ function pointAtArcLength(dense, cum, target) {
   return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
 }
 
-// Build a dense polyline approximation of the smooth curve through `points`
-// (one point per reel), then resample it into `sampleCount` samples.
-//
-// Every original control point (reel center) is always included exactly
-// (both coordinates copied verbatim, not re-interpolated), so a bone always
-// lands precisely on each reel's cell center — this avoids the curve
-// visually "cutting the corner" at sharp turns just because arc-length
-// resampling happened not to land a sample exactly on the control point.
-// Any remaining sample budget is distributed across the segments between
-// consecutive control points, proportional to each segment's arc length,
-// and spaced evenly by arc length within the segment.
-//
-// `tangentOverrides` (optional): sparse array index-aligned with
-// `points` — see getHandleVectors(). Passing the same pattern's
-// overrides here (grid overlay, mesh preview, AND Spine export all call
-// buildCurve with the same arguments) is what makes a manually-dragged
-// tangent handle affect the final exported animation too.
-//
-// Returns { samples, maxTurnAngle }
-export function buildCurve(points, tension, sampleCount, tangentOverrides) {
+const SEG_STEPS = 24; // dense polyline steps per segment
+
+// Dense polyline of the smooth curve through `points` (Hermite segments using
+// the per-point handles). controlDenseIdx[k] = dense index of control point k.
+function buildDenseCurve(points, tension, tangentOverrides) {
   const n = points.length;
-  if (n < 2) {
-    return { samples: points.map((p) => ({ x: p.x, y: p.y })), maxTurnAngle: 0 };
-  }
-  // never fewer samples than control points — every reel center needs a bone
-  sampleCount = Math.max(sampleCount, n);
-
   const handles = getHandleVectors(points, tangentOverrides);
-
   const dense = [];
-  const segStepsPerPair = 24;
-  // dense index where control point k lands exactly (t=0 of its pair).
   const controlDenseIdx = [];
-
   for (let i = 0; i < n - 1; i++) {
     controlDenseIdx.push(dense.length);
     const p1 = points[i], p2 = points[i + 1];
@@ -294,55 +227,53 @@ export function buildCurve(points, tension, sampleCount, tangentOverrides) {
     // its INCOMING (bwd) handle — same value as fwd unless the user
     // Shift-dragged that point into an asymmetric "corner" handle
     const m1 = handles[i].fwd, m2 = handles[i + 1].bwd;
-    for (let s = 0; s < segStepsPerPair; s++) {
-      const t = s / segStepsPerPair;
-      dense.push(hermite(p1, p2, m1, m2, t, tension));
-    }
+    for (let s = 0; s < SEG_STEPS; s++) dense.push(hermite(p1, p2, m1, m2, s / SEG_STEPS, tension));
   }
   dense.push({ x: points[n - 1].x, y: points[n - 1].y });
-  controlDenseIdx.push(dense.length - 1); // last control point
+  controlDenseIdx.push(dense.length - 1);
+  return { dense, controlDenseIdx };
+}
 
-  // arc length table
+
+// Resample a dense polyline into `sampleCount` samples. Every control point
+// is kept exactly (copied verbatim, not re-interpolated), so a bone always
+// lands on it; the remaining samples are spread over the segments between
+// control points in proportion to each segment's arc length, evenly spaced
+// within a segment — so spacing is (nearly) the same along the whole line.
+function resampleThroughControls(dense, controlDenseIdx, controls, sampleCount) {
+  const n = controls.length;
   const cum = [0];
   for (let i = 1; i < dense.length; i++) {
-    const dx = dense[i].x - dense[i - 1].x;
-    const dy = dense[i].y - dense[i - 1].y;
-    cum.push(cum[i - 1] + Math.hypot(dx, dy));
+    cum.push(cum[i - 1] + Math.hypot(dense[i].x - dense[i - 1].x, dense[i].y - dense[i - 1].y));
   }
-
-  // arc-length position of each control point (reel center) — controlDenseIdx
-  // now has exactly n entries, one per control point, in order
   const controlArc = controlDenseIdx.map((idx) => cum[idx]);
 
   // distribute (sampleCount - n) extra samples across the n-1 segments,
   // proportional to each segment's arc length (largest-remainder method)
-  const extra = sampleCount - n;
+  const extra = Math.max(0, sampleCount - n);
   const segLens = [];
   for (let i = 0; i < n - 1; i++) segLens.push(Math.max(0, controlArc[i + 1] - controlArc[i]));
   const totalLen = segLens.reduce((a, b) => a + b, 0) || 1;
-
   const rawCounts = segLens.map((len) => (extra * len) / totalLen);
   const segExtra = rawCounts.map(Math.floor);
   let assigned = segExtra.reduce((a, b) => a + b, 0);
-  const remainders = rawCounts.map((v, i) => ({ i, r: v - Math.floor(v) }))
-    .sort((a, b) => b.r - a.r);
-  for (let k = 0; k < remainders.length && assigned < extra; k++, assigned++) {
-    segExtra[remainders[k].i]++;
-  }
+  const remainders = rawCounts.map((v, i) => ({ i, r: v - Math.floor(v) })).sort((a, b) => b.r - a.r);
+  for (let k = 0; k < remainders.length && assigned < extra; k++, assigned++) segExtra[remainders[k].i]++;
 
   const samples = [];
   for (let i = 0; i < n - 1; i++) {
-    samples.push({ x: points[i].x, y: points[i].y }); // exact control point
+    samples.push({ x: controls[i].x, y: controls[i].y }); // exact control point
     const m = segExtra[i];
     for (let j = 1; j <= m; j++) {
-      const target = controlArc[i] + (segLens[i] * j) / (m + 1);
-      samples.push(pointAtArcLength(dense, cum, target));
+      samples.push(pointAtArcLength(dense, cum, controlArc[i] + (segLens[i] * j) / (m + 1)));
     }
   }
-  samples.push({ x: points[n - 1].x, y: points[n - 1].y }); // final exact control point
+  samples.push({ x: controls[n - 1].x, y: controls[n - 1].y });
+  return samples;
+}
 
-  // turn-angle analysis (using the original control points, not dense samples,
-  // to warn about genuinely sharp reel-to-reel turns)
+// Sharpest reel-to-reel turn (degrees), from the control points themselves.
+function maxTurnAngleOf(points) {
   let maxTurnAngle = 0;
   for (let i = 1; i < points.length - 1; i++) {
     const a = points[i - 1], b = points[i], c = points[i + 1];
@@ -354,6 +285,58 @@ export function buildCurve(points, tension, sampleCount, tangentOverrides) {
     const angle = Math.acos(Math.max(-1, Math.min(1, dot))) * (180 / Math.PI);
     if (angle > maxTurnAngle) maxTurnAngle = angle;
   }
+  return maxTurnAngle;
+}
 
-  return { samples, maxTurnAngle };
+// Smooth curve through `points` (one per reel), resampled into `sampleCount`
+// samples with a sample exactly on every reel center (avoids the curve
+// "cutting the corner" at sharp turns).
+//
+// `tangentOverrides` (optional): sparse array index-aligned with
+// `points` — see getHandleVectors(). Grid overlay, mesh preview AND Spine
+// export all use the same overrides, so a dragged handle reaches the export.
+//
+// Returns { samples, maxTurnAngle }
+export function buildCurve(points, tension, sampleCount, tangentOverrides) {
+  const n = points.length;
+  if (n < 2) {
+    return { samples: points.map((p) => ({ x: p.x, y: p.y })), maxTurnAngle: 0 };
+  }
+  const { dense, controlDenseIdx } = buildDenseCurve(points, tension, tangentOverrides);
+  const samples = resampleThroughControls(dense, controlDenseIdx, points, Math.max(sampleCount, n));
+  return { samples, maxTurnAngle: maxTurnAngleOf(points) };
+}
+
+// Bone positions for the whole rig: a straight lead-in line (`lead` px left of
+// the first reel, same height), the curve, and a straight lead-out line (`lead`
+// px right of the last reel). `totalBones` bones are spread along ALL of it by
+// arc length, so the lead lines get bones at the same spacing as the curve and
+// the texture is shared out evenly instead of being stretched at the ends.
+// There is always a bone at both line ends and on every reel center.
+// lead = 0 puts the end bones right on the first/last reel point.
+// Returns { samples, maxTurnAngle } with samples.length === max(totalBones, reels + 2).
+export function buildRigSamples(points, tension, totalBones, tangentOverrides, lead) {
+  const n = points.length;
+  lead = Math.max(0, lead || 0);
+  const first = points[0], last = points[n - 1];
+  const start = { x: first.x - lead, y: first.y };
+  const end = { x: last.x + lead, y: last.y };
+  const controls = [start, ...points, end];
+
+  const curve = n >= 2
+    ? buildDenseCurve(points, tension, tangentOverrides)
+    : { dense: [{ x: first.x, y: first.y }], controlDenseIdx: [0] };
+  const dense = [];
+  for (let s = 0; s < SEG_STEPS; s++) {
+    dense.push({ x: start.x + (first.x - start.x) * (s / SEG_STEPS), y: first.y });
+  }
+  const offset = dense.length;
+  dense.push(...curve.dense);
+  for (let s = 1; s <= SEG_STEPS; s++) {
+    dense.push({ x: last.x + (end.x - last.x) * (s / SEG_STEPS), y: last.y });
+  }
+  const controlDenseIdx = [0, ...curve.controlDenseIdx.map((i) => i + offset), dense.length - 1];
+
+  const samples = resampleThroughControls(dense, controlDenseIdx, controls, Math.max(totalBones, controls.length));
+  return { samples, maxTurnAngle: maxTurnAngleOf(points) };
 }

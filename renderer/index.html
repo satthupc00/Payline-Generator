@@ -131,6 +131,7 @@
         </div>
         <input type="range" id="boneCountSlider" min="5" max="200" value="24" step="1" style="margin-top:6px;" />
         <div class="hint">Auto: tự tính theo độ gắt (góc bẻ) của các pattern hiện có.</div>
+        <div class="hint">Tổng bone khi export (gồm bone 2 đầu): <span id="boneTotalVal">–</span></div>
       </div>
 
       <div id="warningBox" class="warning-box" style="display:none;">
@@ -186,14 +187,10 @@
       <input type="number" id="cfgGap" value="6" min="0" />
     </div>
     <div class="row">
-      <label class="field-label">Bone đầu trái: <span id="cfgLeadInVal">90</span>px</label>
-      <input type="range" id="cfgLeadIn" min="0" max="90" value="90" step="1" style="flex:1;" />
+      <label class="field-label">Bone 2 đầu: <span id="cfgLeadVal">90</span>px</label>
+      <input type="range" id="cfgLead" min="0" max="90" value="90" step="1" style="flex:1;" />
     </div>
-    <div class="row">
-      <label class="field-label">Bone đầu phải: <span id="cfgLeadOutVal">90</span>px</label>
-      <input type="range" id="cfgLeadOut" min="0" max="90" value="90" step="1" style="flex:1;" />
-    </div>
-    <div class="hint">Khoảng cách từ bone đầu/cuối (nằm ngoài lưới) tới điểm neo kế nó. 0 = trùng điểm neo, tối đa = 1 ô.</div>
+    <div class="hint">Độ dài đoạn thẳng ở 2 đầu (nằm ngoài lưới), 2 đầu bằng nhau. 0 = bone đầu trùng điểm neo, tối đa = 1 ô.</div>
     <div class="row">
       <label class="field-label">Màu viền ô (stroke)</label>
       <input type="color" id="cfgStrokeColor" value="#4a2f7a" style="width:60px;height:30px;padding:2px;" />

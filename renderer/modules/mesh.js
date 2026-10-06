@@ -8,7 +8,10 @@
 // by Spine's mesh format), then any interior vertices (only present
 // when rows > 2 and columns > 2) after.
 
-export function buildRibbonMesh(frameWidth, frameHeight, boneCount, columns, rows = 2) {
+// collapseEnds: the first/last bone sit on top of their neighbour in the rest
+// pose (used when the lead lines have 0 length and the end bones overlap the
+// first/last reel point), so no slice of texture is squeezed into nothing.
+export function buildRibbonMesh(frameWidth, frameHeight, boneCount, columns, rows = 2, collapseEnds = false) {
   columns = Math.max(columns, 2);
   rows = Math.max(2, Math.min(20, rows));
   const halfH = frameHeight / 2;
@@ -62,8 +65,11 @@ export function buildRibbonMesh(frameWidth, frameHeight, boneCount, columns, row
   }
 
   const boneRestX = [];
+  const spread = collapseEnds && boneCount > 3 ? boneCount - 2 : boneCount;
+  const first = spread === boneCount ? 0 : 1;
   for (let i = 0; i < boneCount; i++) {
-    boneRestX.push((i / (boneCount - 1)) * frameWidth - frameWidth / 2);
+    const k = Math.max(0, Math.min(spread - 1, i - first));
+    boneRestX.push((k / (spread - 1)) * frameWidth - frameWidth / 2);
   }
 
   const weightFor = (v) => {
