@@ -1,0 +1,58 @@
+# Builds the Payline Generator Windows installer and publishes it as a GitHub Release whenever the version in
+# package.json changes on main. Installed apps pick the new release up automatically.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json, release-notes.md, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      exists: ${{ steps.v.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v$VERSION already exists, nothing to build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.exists == 'false'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      # Fails the build if release-notes.md isn't written for this version.
+      - run: node scripts/release-notes.js
+      # bash, not the default PowerShell, which mangles the -c.releaseInfo... argument
+      - run: npx electron-builder --win nsis --x64 --publish always -c.releaseInfo.releaseNotesFile=build/release-notes.md
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Also put the notes on the GitHub release page; without a body the updater falls back to
+      # the commit message.
+      - run: gh release edit "v${{ needs.check.outputs.version }}" --notes-file build/release-notes.md
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

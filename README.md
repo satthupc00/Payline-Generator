@@ -5,40 +5,57 @@ auto-generates a smooth curve, deforms a flipbook mesh along it (hose-rig
 skinning), and exports a Spine 3.7.94 json/atlas/png bundle with one
 animation per pattern.
 
-## Chạy thử (cần máy có Node.js + internet để tải Electron lần đầu)
+## Chạy thử (cần máy có Node.js + internet)
 
 ```
 npm install
 npm start
 ```
 
-## Build bản portable (thư mục, không cần cài đặt)
+## File cài đặt cho khách hàng
 
-```
-npm install
-npm run dist:win
-```
+Khách hàng tải file **`Mondiro-Payline-Generator-Setup-<version>.exe`** ở mục
+**Releases** của repo này (cột bên phải trang GitHub), chạy là cài xong, có
+shortcut ngoài Desktop và Start Menu.
 
-Kết quả nằm ở `dist/win-unpacked/` — đây là **cả một thư mục portable**:
-gửi/copy nguyên thư mục này cho người khác, họ chỉ cần chạy file
-`Payline Generator.exe` bên trong, không cần cài Node/Electron gì cả.
-Vì cấu hình `win.target` đã set là `dir` (unpacked folder) thay vì
-installer (nsis) nên electron-builder không tạo file cài đặt, chỉ đóng
-gói thẳng ra thư mục chạy được.
+Lần đầu mở app sẽ hiện màn hình **nhập key**. Key **dùng chung với Spine
+Preview**: ai đã có key Spine Preview thì nhập đúng key đó là dùng được. Thu
+hồi/xóa key trong bảng Admin (ở Spine Preview hoặc ở app này đều được) thì
+máy đó bị khóa cả 2 app trong khoảng 15–20 phút. Mất mạng thì máy đã kích
+hoạt vẫn dùng được thêm 7 ngày.
 
-Pin lên taskbar: mở thư mục `win-unpacked`, chuột phải vào
-`Payline Generator.exe` → **Pin to taskbar**. Lưu ý không tách rời file
-.exe khỏi thư mục — nó cần các file `.dll`/`resources` đi kèm ngay cạnh
-để chạy được, nên khi gửi cho người khác phải gửi **nguyên cả thư mục**
-(có thể nén .zip để gửi, người nhận giải nén ra rồi chạy tại chỗ).
+Bảng Admin mở bằng phím tắt riêng (giống Spine Preview). Đăng nhập Admin bằng
+GitHub token có quyền ghi vào repo **Spine_Preview** (cách tạo token: xem
+README của Spine Preview). Token được lưu riêng cho từng app, nên ở app này
+cần đăng nhập Admin một lần nữa.
 
-Cấu hình lưu preset / vị trí cửa sổ vẫn ghi vào thư mục AppData của
-Windows (không ghi vào chính thư mục app), nên thư mục portable này copy
-sang máy khác chạy vẫn bình thường, không bị lỗi quyền ghi.
+## Phát hành bản mới (tự động cập nhật)
+
+1. Sửa code, đổi `"version"` trong `package.json` (ví dụ `2.0.0` → `2.0.1`).
+2. Ghi nội dung bảng thông báo cập nhật vào `release-notes.md`:
+   ```
+   # v2.0.1
+   - Thêm tính năng ...
+   ```
+   Tiêu đề phải trùng version, nếu không GitHub sẽ không build.
+3. Push lên nhánh `main`.
+
+GitHub Actions tự build file Setup .exe và đăng lên **Releases** (khoảng 5–10
+phút, xem ở tab **Actions**). App đã cài trên máy khách kiểm tra bản mới lúc
+mở app và mỗi 1 tiếng, tự tải về rồi hỏi "Cập nhật ngay / Để sau". Chọn "Để
+sau" thì lần tắt app tới sẽ tự cài.
+
+> **Lưu ý:** repo phải để **Public** thì app mới tải được bản cập nhật.
+
+Build thử trên máy Windows (không phát hành): `npm run dist` → file nằm trong `dist/`.
 
 ## Cấu trúc
 
 - `main.js` / `preload.js` — Electron main process, file dialogs, ghi file export
+- `license.js` / `renderer/license-ui.js` — khóa key (dùng chung key Spine Preview), bảng Admin
+- `updater.js` — tự cập nhật từ GitHub Releases
+- `release-notes.md` — nội dung bảng thông báo cập nhật
+- `.github/workflows/release.yml` — tự build file cài và phát hành khi đổi version
 - `renderer/` — UI (HTML/CSS/JS thuần, không framework)
   - `modules/grid.js` — layout lưới (thẳng hàng / so le)
   - `modules/spline.js` — Catmull-Rom spline + resample theo arc-length + phát hiện góc gắt

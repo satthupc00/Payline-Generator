@@ -1,6 +1,14 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { initLicense, isLocked } = require('./license.js');
+const { initUpdater } = require('./updater.js');
+
+ipcMain.on('get-app-version', (e) => { e.returnValue = app.getVersion(); });
+
+// Must match build.appId so Windows groups the installed app under its own name, not "Electron".
+if (process.platform === 'win32') app.setAppUserModelId('com.mondiro.paylinegenerator');
+app.setName('Mondiro Payline Generator');
 
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
 const PRESETS_FILE = path.join(app.getPath('userData'), 'grid-presets.json');
@@ -45,7 +53,25 @@ function createWindow() {
   mainWindow.on('close', () => saveWindowState(mainWindow));
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // No default menu: its shortcuts (reload, DevTools) could get past the lock screen.
+  Menu.setApplicationMenu(null);
+  createWindow();
+  initLicense(() => mainWindow);
+  initUpdater(() => mainWindow);
+});
+
+// F12 / Ctrl+Shift+I open DevTools only while the app is unlocked.
+app.on('browser-window-created', (_e, win) => {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const devtools = input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i');
+    if (devtools && !isLocked()) {
+      win.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -106,6 +132,7 @@ ipcMain.handle('dialog:chooseOutputFolder', async () => {
 });
 
 ipcMain.handle('fs:exportBundle', async (evt, { outputDir, baseName, jsonText, atlasText, pngPages }) => {
+  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
   try {
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
     fs.writeFileSync(path.join(outputDir, `${baseName}.json`), jsonText, 'utf-8');
@@ -129,6 +156,7 @@ ipcMain.handle('presets:load', async () => {
 });
 
 ipcMain.handle('presets:save', async (evt, presets) => {
+  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
   try {
     fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
     return { ok: true };

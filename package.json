@@ -7,7 +7,8 @@
   "author": "Mondiro",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "set CSC_IDENTITY_AUTO_DISCOVERY=false&&electron-builder --win nsis --x64",
+    "dist:folder": "set CSC_IDENTITY_AUTO_DISCOVERY=false&&electron-builder --win --x64 --dir"
   },
   "license": "UNLICENSED",
   "devDependencies": {
@@ -17,16 +18,57 @@
   "build": {
     "appId": "com.mondiro.paylinegenerator",
     "productName": "Mondiro Payline Generator",
-    "icon": "build/icon.ico",
+    "copyright": "Powered by Mondiro",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "license.js",
+      "updater.js",
+      "renderer/**",
+      "package.json",
+      "build/icon.ico",
+      "build/icon.png",
+      "!dist/**",
+      "!**/*.map"
+    ],
+    "asar": true,
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
-      "artifactName": "Mondiro-Payline-Generator-Setup-${version}.exe",
+      "artifactName": "Mondiro-Payline-Generator-Setup-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "createDesktopShortcut": true
-    }
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mondiro Payline Generator"
+    },
+    "compression": "maximum",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "satthupc00",
+        "repo": "Payline-Generator",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   }
 }
