@@ -25,7 +25,8 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if gh release view "v$VERSION" > /dev/null 2>&1; then
+          # A release only counts as done when latest.yml is on it; a half-uploaded one is rebuilt.
+          if gh release view "v$VERSION" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx latest.yml; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release v$VERSION already exists, nothing to build."
           else
@@ -44,15 +45,20 @@ jobs:
       - run: npm install
       # Fails the build if release-notes.md isn't written for this version.
       - run: node scripts/release-notes.js
-      # bash, not the default PowerShell, which mangles the -c.releaseInfo... argument
-      - run: npx electron-builder --win nsis --x64 --publish always -c.releaseInfo.releaseNotesFile=build/release-notes.md
+      # Build only; uploading is done below in one step. electron-builder's own upload could leave a
+      # half-made release ("Published releases must have a valid tag"). latest.yml is still written
+      # because package.json has a publish provider. bash, not PowerShell, which mangles -c.releaseInfo...
+      - run: npx electron-builder --win nsis --x64 --publish never -c.releaseInfo.releaseNotesFile=build/release-notes.md
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      # Also put the notes on the GitHub release page; without a body the updater falls back to
-      # the commit message.
-      - run: gh release edit "v${{ needs.check.outputs.version }}" --notes-file build/release-notes.md
+      # Replaces a half-finished release of the same version, then uploads installer + latest.yml
+      # (what installed apps read to find updates) with the notes as the release body.
+      - run: |
+          TAG="v${{ needs.check.outputs.version }}"
+          gh release delete "$TAG" --cleanup-tag -y 2>/dev/null || true
+          gh release create "$TAG" dist/*.exe dist/*.blockmap dist/latest.yml \
+            --title "$TAG" --notes-file build/release-notes.md --target "$GITHUB_SHA"
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
