@@ -11,7 +11,6 @@ if (process.platform === 'win32') app.setAppUserModelId('com.mondiro.paylinegene
 app.setName('Mondiro Payline Generator');
 
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
-const PRESETS_FILE = path.join(app.getPath('userData'), 'grid-presets.json');
 
 function loadWindowState() {
   try {
@@ -29,6 +28,8 @@ function saveWindowState(win) {
 }
 
 let mainWindow;
+let projectDirty = false; // renderer reports unsaved changes in the open project file
+ipcMain.on('project:dirty', (evt, dirty) => { projectDirty = !!dirty; });
 
 function createWindow() {
   const state = loadWindowState();
@@ -50,7 +51,21 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  mainWindow.on('close', () => saveWindowState(mainWindow));
+  mainWindow.on('close', (e) => {
+    saveWindowState(mainWindow);
+    if (!projectDirty) return;
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: 'Chưa lưu',
+      message: 'File đang làm có thay đổi chưa lưu.',
+      detail: 'Thoát luôn thì các thay đổi đó sẽ mất. Bấm "Huỷ" rồi dùng nút Xuất file (Ctrl+S) để lưu.',
+      buttons: ['Thoát không lưu', 'Huỷ'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    });
+    if (choice === 1) e.preventDefault();
+  });
 }
 
 app.whenReady().then(() => {
@@ -98,7 +113,21 @@ ipcMain.handle('dialog:openImages', async () => {
 ipcMain.handle('dialog:openFlipbookFolder', async () => {
   const res = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
   if (res.canceled || res.filePaths.length === 0) return [];
-  const dir = res.filePaths[0];
+  return readFlipbookFolder(res.filePaths[0]);
+});
+
+// Re-reads the flipbook folder / background image saved in a project file.
+ipcMain.handle('fs:readFlipbookFolder', async (evt, dir) => readFlipbookFolder(dir));
+ipcMain.handle('fs:readImageFile', async (evt, p) => {
+  try {
+    const data = fs.readFileSync(p);
+    return { path: p, name: path.basename(p), dataUrl: `data:image/${path.extname(p).slice(1)};base64,${data.toString('base64')}` };
+  } catch {
+    return null;
+  }
+});
+
+function readFlipbookFolder(dir) {
   const IMG_EXT = new Set(['.png', '.jpg', '.jpeg']);
   let files;
   try {
@@ -112,7 +141,7 @@ ipcMain.handle('dialog:openFlipbookFolder', async () => {
     const data = fs.readFileSync(p);
     return { path: p, name: f, dataUrl: `data:image/${path.extname(f).slice(1)};base64,${data.toString('base64')}` };
   });
-});
+}
 
 ipcMain.handle('dialog:openSingleImage', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
@@ -147,54 +176,43 @@ ipcMain.handle('fs:exportBundle', async (evt, { outputDir, baseName, jsonText, a
   }
 });
 
-ipcMain.handle('presets:load', async () => {
-  try {
-    return JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-});
+// ---- IPC: project file (.payline) — the whole working session ----
 
-// Export / import grid presets as a .json file so they can be backed up or shared.
-ipcMain.handle('presets:exportFile', async (evt, { presets }) => {
+const PROJECT_FILTERS = [{ name: 'Payline project', extensions: ['payline'] }];
+
+// filePath = the file currently open; null (never saved) or saveAs → ask where to save.
+ipcMain.handle('project:save', async (evt, { filePath, data, suggestedName, saveAs }) => {
   if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
-  const res = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: 'payline-grid-presets.json',
-    filters: [{ name: 'Grid presets', extensions: ['json'] }]
-  });
-  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  let target = saveAs ? null : filePath;
+  if (!target) {
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Lưu file Payline',
+      defaultPath: filePath || `${suggestedName || 'Untitled'}.payline`,
+      filters: PROJECT_FILTERS
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    target = res.filePath;
+  }
   try {
-    fs.writeFileSync(res.filePath, JSON.stringify({ type: 'mondiro-payline-presets', version: 1, presets }, null, 2));
-    return { ok: true, filePath: res.filePath };
+    fs.writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8');
+    return { ok: true, filePath: target };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
 });
 
-ipcMain.handle('presets:importFile', async () => {
+ipcMain.handle('project:open', async () => {
   if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
   const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Mở file Payline',
     properties: ['openFile'],
-    filters: [{ name: 'Grid presets', extensions: ['json'] }]
+    filters: PROJECT_FILTERS
   });
   if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
   try {
     const data = JSON.parse(fs.readFileSync(res.filePaths[0], 'utf-8'));
-    // Accepts a file from "Xuất file" ({ presets: {...} }) or a bare { name: config } map.
-    const presets = data && typeof data.presets === 'object' ? data.presets : data;
-    if (!presets || typeof presets !== 'object' || Array.isArray(presets)) throw new Error('File không đúng định dạng preset.');
-    return { ok: true, presets };
+    return { ok: true, filePath: res.filePaths[0], data };
   } catch (err) {
-    return { ok: false, error: err.message || String(err) };
-  }
-});
-
-ipcMain.handle('presets:save', async (evt, presets) => {
-  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
-  try {
-    fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: String(err) };
+    return { ok: false, error: 'File không đọc được: ' + (err.message || String(err)) };
   }
 });

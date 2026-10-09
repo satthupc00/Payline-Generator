@@ -38,16 +38,16 @@
       </div>
 
       <div class="section" style="margin-top:auto;">
-        <h3>Grid presets</h3>
-        <select id="presetSelect"></select>
-        <div class="row" style="display:flex;gap:6px;margin-top:6px;">
-          <button id="btnSavePreset" style="flex:1;">Save</button>
-          <button id="btnLoadPreset" style="flex:1;">Load</button>
+        <h3>File</h3>
+        <div class="project-file" title="File đang làm việc">
+          <span id="projectName">Chưa lưu (file mới)</span>
+          <span id="projectDirty" class="project-dirty" title="Có thay đổi chưa lưu" hidden>●</span>
         </div>
         <div class="row" style="display:flex;gap:6px;margin-top:6px;">
-          <button id="btnExportPresetFile" class="ghost" style="flex:1;" title="Lưu tất cả preset ra 1 file .json">⇪ Xuất file</button>
-          <button id="btnImportPresetFile" class="ghost" style="flex:1;" title="Nạp preset từ file .json">⇩ Nhập file</button>
+          <button id="btnSaveProject" style="flex:1;" title="Lưu (Ctrl+S). Giữ Shift khi bấm (hoặc Ctrl+Shift+S) để lưu thành file khác">⇪ Xuất file</button>
+          <button id="btnOpenProject" style="flex:1;" title="Mở file .payline">⇩ Nhập file</button>
         </div>
+        <button id="btnNewProject" class="ghost" style="width:100%;margin-top:6px;" title="Tạo file trống hoàn toàn">＋ File mới</button>
       </div>
     </div>
 
@@ -200,21 +200,6 @@
     <div class="actions">
       <button class="ghost" id="btnCancelGridConfig">Huỷ</button>
       <button class="accent" id="btnApplyGridConfig">Áp dụng</button>
-    </div>
-  </div>
-</div>
-
-<!-- Save preset modal -->
-<div class="modal-overlay" id="savePresetModal" style="display:none;">
-  <div class="modal">
-    <h2>Lưu grid preset</h2>
-    <div class="row">
-      <label class="field-label">Tên preset</label>
-      <input type="text" id="presetNameInput" placeholder="Megaways_5x" />
-    </div>
-    <div class="actions">
-      <button class="ghost" id="btnCancelSavePreset">Huỷ</button>
-      <button class="accent" id="btnConfirmSavePreset">Lưu</button>
     </div>
   </div>
 </div>

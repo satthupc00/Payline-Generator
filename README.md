@@ -29,6 +29,19 @@ GitHub token có quyền ghi vào repo **Spine_Preview** (cách tạo token: xem
 README của Spine Preview). Token được lưu riêng cho từng app, nên ở app này
 cần đăng nhập Admin một lần nữa.
 
+## Lưu / mở file làm việc (.payline)
+
+Khung **File** ở góc dưới bên trái hiện tên file đang làm (dấu ● màu vàng = có thay đổi chưa lưu).
+
+- **⇪ Xuất file** (Ctrl+S): lưu. Lần đầu sẽ hỏi chỗ lưu và tên file; từ lần sau lưu đè lên file đang mở.
+  Giữ Shift khi bấm (hoặc Ctrl+Shift+S) để lưu thành file khác.
+- **⇩ Nhập file**: mở lại 1 file `.payline`.
+- **＋ File mới**: bắt đầu file trống hoàn toàn.
+
+File lưu toàn bộ phiên làm việc: lưới, tất cả pattern (điểm, tay cầm đường cong, tension), các thông số
+bên phải, thư mục output, và **đường dẫn** tới thư mục flipbook + ảnh nền (ảnh không nằm trong file,
+nên đừng di chuyển/xóa chúng). Tắt app khi chưa lưu sẽ được hỏi lại.
+
 ## Phát hành bản mới (tự động cập nhật)
 
 1. Sửa code, đổi `"version"` trong `package.json` (ví dụ `2.0.0` → `2.0.1`).

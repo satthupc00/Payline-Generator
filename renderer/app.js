@@ -45,7 +45,7 @@ function maxLeadLength(cfg = state.gridConfig) {
   return Math.max(cfg.cellW, cfg.cellH);
 }
 function leadLength(cfg = state.gridConfig) {
-  // older presets stored one value per side (leadIn / leadOut)
+  // v2.0.1 stored one value per side (leadIn / leadOut)
   const v = cfg.lead ?? cfg.leadIn ?? cfg.leadOut;
   const max = maxLeadLength(cfg);
   if (v == null || !Number.isFinite(Number(v))) return max;
@@ -93,7 +93,7 @@ const state = {
   boneCount: DEFAULT_BONE_COUNT,
   baseName: 'VFX_Playline',
   outputPath: '',
-  presets: {},
+  flipbookDir: null,   // folder the flipbook was loaded from (saved in the project file)
   playing: false,
   scrubIndex: 0,
   mesh: null,
@@ -784,17 +784,27 @@ el('bgBrightness').addEventListener('input', (e) => {
 el('btnImportFlipbook').addEventListener('click', async () => {
   const files = await window.paylineAPI.openFlipbookFolder();
   if (!files.length) return toast('Không tìm thấy ảnh PNG/JPG nào trong thư mục đã chọn.');
-  const loaded = await Promise.all(files.map((f) => loadImage(f.dataUrl).then((img) => ({ name: baseNameNoExt(f.name), img }))));
-  state.flipbook = loaded;
-  el('scrubBar').max = String(Math.max(0, loaded.length - 1));
+  await applyFlipbook(files);
+  renderAll();
+  toast(`Đã nạp ${state.flipbook.length} frame flipbook.`);
+});
+
+// files: [{ path, name, dataUrl }] from the main process; [] clears the flipbook
+async function applyFlipbook(files) {
+  state.flipbook = await Promise.all(files.map((f) => loadImage(f.dataUrl).then((img) => ({ name: baseNameNoExt(f.name), img }))));
+  state.flipbookDir = files.length ? parentDir(files[0].path) : null;
+  el('scrubBar').max = String(Math.max(0, state.flipbook.length - 1));
+  el('scrubBar').value = '0';
   state.scrubIndex = 0;
   rebuildMesh();
-  renderAll();
   const btn = el('btnImportFlipbook');
-  btn.classList.add('imported');
-  btn.textContent = `✓ Flipbook (${loaded.length} frame)`;
-  toast(`Đã nạp ${loaded.length} frame flipbook.`);
-});
+  btn.classList.toggle('imported', !!state.flipbook.length);
+  btn.textContent = state.flipbook.length ? `✓ Flipbook (${state.flipbook.length} frame)` : '📁 Import flipbook (folder)';
+}
+
+function parentDir(p) {
+  return p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')));
+}
 
 function baseNameNoExt(name) {
   return name.replace(/\.[^.]+$/, '');
@@ -836,17 +846,27 @@ el('btnImportBg').addEventListener('click', async () => {
   const f = await window.paylineAPI.openSingleImage();
   if (!f) return;
   const img = await loadImage(f.dataUrl);
-  state.bgImage = { img, x: 0, y: 0, scale: 1, locked: false };
+  state.bgImage = { img, path: f.path, x: 0, y: 0, scale: 1, locked: false };
   state.bgEditBackup = null;
   state.bgEditing = true;
   state.bgVisible = true;
-  el('bgEditControls').style.display = 'flex';
-  el('btnEditBg').style.display = 'inline-block';
-  el('btnToggleBg').style.display = 'inline-block';
-  el('btnToggleBg').textContent = '👁 Ẩn nền';
-  el('bgBrightnessSection').style.display = 'block';
+  syncBackgroundUI();
   drawGrid();
 });
+
+// Shows/hides the background buttons and sliders to match state.bgImage.
+function syncBackgroundUI() {
+  const has = !!state.bgImage;
+  el('bgEditControls').style.display = has && state.bgEditing ? 'flex' : 'none';
+  el('btnEditBg').style.display = has ? 'inline-block' : 'none';
+  el('btnToggleBg').style.display = has ? 'inline-block' : 'none';
+  el('btnToggleBg').textContent = state.bgVisible ? '👁 Ẩn nền' : '🚫 Hiện nền';
+  el('bgBrightnessSection').style.display = has ? 'block' : 'none';
+  el('bgOpacity').value = state.bgOpacity;
+  el('bgOpacityVal').textContent = String(state.bgOpacity);
+  el('bgBrightness').value = state.bgBrightness;
+  el('bgBrightnessVal').textContent = String(state.bgBrightness);
+}
 
 el('btnEditBg').addEventListener('click', () => {
   if (!state.bgImage) return;
@@ -980,79 +1000,194 @@ el('btnApplyGridConfig').addEventListener('click', () => {
 });
 
 // ==================================================================
-// Grid presets
+// Project file (.payline): the whole working session — grid, patterns,
+// settings, output folder, and the paths of the flipbook folder and the
+// background image (paths only; the images are re-read when opening).
 // ==================================================================
-async function refreshPresetSelect() {
-  state.presets = (await window.paylineAPI.loadPresets()) || {};
-  const sel = el('presetSelect');
-  sel.innerHTML = Object.keys(state.presets).map((n) => `<option value="${n}">${n}</option>`).join('') || '<option value="">(chưa có preset)</option>';
+const PROJECT_TYPE = 'mondiro-payline-project';
+const DEFAULT_GRID = JSON.parse(JSON.stringify(state.gridConfig));
+const DEFAULT_SETTINGS = {
+  skeletonName: state.skeletonName, baseName: state.baseName, density: state.density,
+  gridRows: state.gridRows, boneAuto: state.boneAuto, boneCount: state.boneCount,
+  trimAtlas: state.trimAtlas, outputPath: state.outputPath
+};
+let currentFilePath = null; // null = never saved
+let savedSnapshot = '';     // project JSON at the last save/open/new, to spot unsaved changes
+
+function serializeProject() {
+  const active = state.patterns.findIndex((p) => p.id === state.activePatternId);
+  const bg = state.bgImage;
+  return {
+    type: PROJECT_TYPE,
+    version: 1,
+    gridConfig: state.gridConfig,
+    patterns: state.patterns.map((p) => ({
+      name: p.name, customNamed: !!p.customNamed, points: p.points,
+      tangentOverrides: p.tangentOverrides || [], tension: p.tension
+    })),
+    activePattern: Math.max(0, active),
+    settings: {
+      skeletonName: state.skeletonName, baseName: state.baseName, density: state.density,
+      gridRows: state.gridRows, boneAuto: state.boneAuto, boneCount: state.boneCount,
+      trimAtlas: state.trimAtlas, outputPath: state.outputPath
+    },
+    flipbookDir: state.flipbookDir || null,
+    background: bg ? {
+      path: bg.path, x: bg.x, y: bg.y, scale: bg.scale,
+      opacity: state.bgOpacity, brightness: state.bgBrightness, visible: state.bgVisible
+    } : null
+  };
 }
 
-el('btnSavePreset').addEventListener('click', () => {
-  el('presetNameInput').value = '';
-  el('savePresetModal').style.display = 'flex';
-});
-el('btnCancelSavePreset').addEventListener('click', () => (el('savePresetModal').style.display = 'none'));
-el('btnConfirmSavePreset').addEventListener('click', async () => {
-  const name = el('presetNameInput').value.trim();
-  if (!name) return;
-  state.presets[name] = state.gridConfig;
-  await window.paylineAPI.savePresets(state.presets);
-  await refreshPresetSelect();
-  el('presetSelect').value = name;
-  el('savePresetModal').style.display = 'none';
-});
-el('btnLoadPreset').addEventListener('click', () => {
-  const name = el('presetSelect').value;
-  if (!name || !state.presets[name]) return;
-  applyGridConfig(state.presets[name]);
-});
-
-// Export every saved preset into one .json file (to back up or send to someone).
-el('btnExportPresetFile').addEventListener('click', async () => {
-  if (!Object.keys(state.presets).length) return toast('Chưa có preset nào để xuất.');
-  const res = await window.paylineAPI.exportPresetFile({ presets: state.presets });
-  if (res && res.ok) toast(`Đã xuất ${Object.keys(state.presets).length} preset ra file.`);
-  else if (res && res.error) toast(`Lỗi xuất preset: ${res.error}`);
-});
-
-// Import presets from a file made by "Xuất file". Presets with the same name are replaced.
-el('btnImportPresetFile').addEventListener('click', async () => {
-  const res = await window.paylineAPI.importPresetFile();
-  if (!res || res.canceled) return;
-  if (!res.ok) return toast(`Lỗi nhập preset: ${res.error}`);
-  const incoming = Object.entries(res.presets || {}).filter(([n, cfg]) => n && isValidGridConfig(cfg));
-  if (!incoming.length) return toast('File không có preset hợp lệ.');
-  incoming.forEach(([n, cfg]) => { state.presets[n] = cfg; });
-  await window.paylineAPI.savePresets(state.presets);
-  await refreshPresetSelect();
-  el('presetSelect').value = incoming[0][0];
-  toast(`Đã nhập ${incoming.length} preset. Chọn preset rồi bấm Load để dùng.`);
-});
-
-function isValidGridConfig(cfg) {
-  return cfg && typeof cfg === 'object' &&
-    Number.isInteger(cfg.reels) && cfg.reels >= 1 &&
-    Array.isArray(cfg.rowsPerReel) && cfg.rowsPerReel.length >= 1 &&
-    Number.isFinite(cfg.cellW) && Number.isFinite(cfg.cellH);
+function fileNameOf(p) {
+  return p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : null;
 }
 
-function applyGridConfig(cfg) {
-  state.gridConfig = { ...JSON.parse(JSON.stringify(cfg)) };
-  if (!Number.isFinite(state.gridConfig.gap)) state.gridConfig.gap = 6;
-  state.patterns.forEach((p) => {
-    const pts = new Array(state.gridConfig.reels).fill(null);
-    p.points.forEach((v, i) => { if (i < state.gridConfig.reels) pts[i] = v; });
-    p.points = pts;
-    const tans = new Array(state.gridConfig.reels).fill(null);
-    (p.tangentOverrides || []).forEach((v, i) => { if (i < state.gridConfig.reels) tans[i] = v; });
-    p.tangentOverrides = tans;
-    p.selectedReels = (p.selectedReels || []).filter((i) => i < state.gridConfig.reels);
-    recomputeWarning(p);
+// Which pattern is selected is saved, but just clicking another one isn't an edit.
+function snapshot() {
+  return JSON.stringify({ ...serializeProject(), activePattern: 0 });
+}
+
+function isDirty() {
+  return snapshot() !== savedSnapshot;
+}
+
+function markSaved() {
+  savedSnapshot = snapshot();
+  updateFileStatus();
+}
+
+// File name in the left panel + window title; "●" = unsaved changes.
+function updateFileStatus() {
+  const name = fileNameOf(currentFilePath) || 'Chưa lưu (file mới)';
+  const dirty = isDirty();
+  el('projectName').textContent = name;
+  el('projectName').title = currentFilePath || '';
+  el('projectDirty').hidden = !dirty;
+  window.paylineAPI.setDirty(dirty); // main process asks before closing with unsaved changes
+  const version = window.licenseAPI ? window.licenseAPI.appVersion : '';
+  document.title = `${dirty ? '● ' : ''}${fileNameOf(currentFilePath) || 'Untitled'} — Mondiro Payline Generator v${version}`;
+}
+
+async function saveProject(saveAs = false) {
+  const res = await window.paylineAPI.saveProject({
+    filePath: currentFilePath,
+    data: serializeProject(),
+    suggestedName: state.skeletonName,
+    saveAs
   });
+  if (res && res.ok) {
+    currentFilePath = res.filePath;
+    markSaved();
+    toast(`Đã lưu ${fileNameOf(currentFilePath)}`);
+  } else if (res && res.error) {
+    toast(`Lỗi lưu file: ${res.error}`);
+  }
+}
+
+function confirmDiscard() {
+  return !isDirty() || confirm('File hiện tại có thay đổi chưa lưu. Bỏ qua các thay đổi đó?');
+}
+
+// Puts a project (from a file, or the empty default for "File mới") into the app.
+async function applyProject(data) {
+  const settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+  Object.assign(state, settings);
+  state.gridConfig = { ...JSON.parse(JSON.stringify(DEFAULT_GRID)), ...(data.gridConfig || {}) };
+  state.patterns = [];
+  uidCounter = 1;
+  (data.patterns || []).forEach((p) => {
+    const reels = state.gridConfig.reels;
+    const fit = (arr) => Array.from({ length: reels }, (_, i) => (arr && arr[i] != null ? arr[i] : null));
+    state.patterns.push({
+      id: uid(), name: p.name || '', customNamed: !!p.customNamed,
+      points: fit(p.points), tangentOverrides: fit(p.tangentOverrides),
+      tension: Number.isFinite(p.tension) ? p.tension : 55, selectedReels: []
+    });
+  });
+  state.activePatternId = state.patterns.length ? state.patterns[Math.min(data.activePattern || 0, state.patterns.length - 1)].id : null;
+
+  // flipbook + background are re-read from disk; a missing one is skipped with a note
+  const missing = [];
+  let files = [];
+  if (data.flipbookDir) {
+    files = await window.paylineAPI.readFlipbookFolder(data.flipbookDir);
+    if (!files.length) missing.push(`thư mục flipbook (${data.flipbookDir})`);
+  }
+  await applyFlipbook(files);
+  state.flipbookDir = data.flipbookDir || null; // keep the path even if it's missing right now
+
+  state.bgImage = null;
+  state.bgEditing = false;
+  state.bgEditBackup = null;
+  const bg = data.background;
+  state.bgOpacity = bg && Number.isFinite(bg.opacity) ? bg.opacity : 100;
+  state.bgBrightness = bg && Number.isFinite(bg.brightness) ? bg.brightness : 0;
+  state.bgVisible = bg ? bg.visible !== false : true;
+  if (bg && bg.path) {
+    const f = await window.paylineAPI.readImageFile(bg.path);
+    if (f) {
+      const img = await loadImage(f.dataUrl);
+      state.bgImage = { img, path: bg.path, x: bg.x || 0, y: bg.y || 0, scale: bg.scale || 1, locked: true };
+    } else {
+      missing.push(`ảnh nền (${bg.path})`);
+    }
+  }
+  syncBackgroundUI();
+  syncControlsFromState();
+  if (!state.patterns.length) addPattern(null);
+  state.patterns.forEach(recomputeWarning);
   syncBoneSliderMin();
   renderAll();
+  return missing;
 }
+
+// Right-panel inputs/sliders follow the state after opening a file.
+function syncControlsFromState() {
+  el('skeletonName').value = state.skeletonName;
+  el('baseName').value = state.baseName;
+  el('density').value = state.density; el('densityVal').textContent = String(state.density);
+  el('gridRows').value = state.gridRows; el('gridRowsVal').textContent = String(state.gridRows);
+  el('boneAuto').checked = state.boneAuto;
+  el('boneCountSlider').disabled = state.boneAuto;
+  el('boneCountSlider').value = state.boneCount; el('boneCountVal').textContent = String(state.boneCount);
+  el('trimAtlas').checked = state.trimAtlas;
+  el('outputPath').value = state.outputPath || '';
+  const p = activePattern();
+  const tension = p ? p.tension : 55;
+  el('tension').value = tension; el('tensionVal').textContent = String(tension);
+}
+
+el('btnSaveProject').addEventListener('click', (e) => saveProject(e.shiftKey));
+
+el('btnOpenProject').addEventListener('click', async () => {
+  if (!confirmDiscard()) return;
+  const res = await window.paylineAPI.openProject();
+  if (!res || res.canceled) return;
+  if (!res.ok) return toast(res.error);
+  if (!res.data || res.data.type !== PROJECT_TYPE) return toast('Đây không phải file Payline (.payline).');
+  const missing = await applyProject(res.data);
+  currentFilePath = res.filePath;
+  markSaved();
+  toast(missing.length ? `Đã mở ${fileNameOf(currentFilePath)} — không tìm thấy ${missing.join(', ')}` : `Đã mở ${fileNameOf(currentFilePath)}`);
+});
+
+el('btnNewProject').addEventListener('click', async () => {
+  if (!confirmDiscard()) return;
+  await applyProject({});
+  currentFilePath = null;
+  markSaved();
+});
+
+// Ctrl+S = save, Ctrl+Shift+S = save as a new file
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
+  e.preventDefault();
+  saveProject(e.shiftKey);
+});
+
+// Cheap enough to just poll: keeps the "●" unsaved marker right whatever was changed.
+setInterval(updateFileStatus, 500);
 
 // ==================================================================
 // Preview rendering (triangle-warp skinned flipbook)
@@ -1328,9 +1463,9 @@ function renderAll() {
 }
 
 (async function init() {
-  await refreshPresetSelect();
   addPattern(null);
   syncBoneSliderMin();
   el('boneCountSlider').disabled = state.boneAuto;
   renderAll();
+  markSaved();
 })();
