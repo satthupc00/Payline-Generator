@@ -4,15 +4,15 @@ Chủ repo (Mondiro) là artist, không phải lập trình viên. Trả lời b
 
 ## Phiên bản và phát hành
 
-- **Không tự ý tăng `version` trong `package.json`.** Chỉ tăng khi Mondiro nói rõ là nâng version.
-  Sửa code mà không được dặn nâng version thì chỉ commit và push, không phát hành bản mới.
-- Khi nâng version, nội dung bảng thông báo cập nhật lấy từ `release-notes.md`
-  (tiêu đề `# v<version>` + các dòng bên dưới). **Chỉ ghi đúng những dòng Mondiro note**,
-  không tự viết thêm và không chép commit message vào.
-- Nếu Mondiro dặn nâng version mà chưa đưa nội dung note, **phải hỏi lại** muốn ghi gì
-  trước khi sửa `release-notes.md` và push.
+- Được **tự do nâng `version`** trong `package.json` khi có thay đổi cần đưa tới máy khách
+  (sửa lỗi nhỏ: tăng số cuối, ví dụ `2.0.4` → `2.0.5`). Không cần hỏi lại Mondiro.
+- Nội dung bảng thông báo cập nhật lấy từ `release-notes.md` (tiêu đề `# v<version>` + các dòng bên dưới).
+  **Tự viết** ngắn gọn bằng tiếng Việt, dễ hiểu cho người dùng (không chép commit message), hoặc ghi `- Fix bugs`.
+  Nếu Mondiro có đưa nội dung note thì ghi đúng nội dung đó.
 - Đổi `version` (hoặc `release-notes.md`) rồi push lên `main` thì GitHub Actions sẽ tự build và phát hành.
   App đã cài sẽ tự cập nhật.
+- Nâng version bằng `npm version <x.y.z> --no-git-tag-version --ignore-scripts` (sửa cả `package-lock.json`
+  cho đúng), không dùng tìm-thay thế, vì dễ đổi nhầm version của thư viện khác.
 
 ## Key
 
