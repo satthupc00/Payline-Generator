@@ -4,13 +4,16 @@
 // both dimensions and rounded up to a multiple of 4; if all frames don't
 // fit on one page, the packer automatically splits into multiple pages.
 //
-// When `trim` is true, each frame's fully-transparent padding is cropped
-// away before packing (smaller atlas, less wasted GPU memory), and the
-// standard TexturePacker-style `size` / `orig` / `offset` fields are written
-// to the .atlas so Spine reconstructs the untrimmed quad correctly. The
-// exported mesh UVs/vertices (see spineExport.js) are computed against the
-// full untrimmed frame regardless, so trimming here never changes the mesh
-// geometry — only how compactly the pixels are packed into the PNG.
+// When `trim` is true, the empty (fully transparent) rows above and below the
+// artwork are cropped away — the SAME rows for every frame, symmetric around
+// the frame's middle line so the artwork stays centred on the payline. The
+// width is never cropped (it maps onto the whole payline length).
+//
+// Every frame must keep one shared size: the frames are mesh attachments, and
+// a mesh covers its whole region. Trimming each frame to its own box (with
+// orig/offset in the .atlas) made Spine runtimes either stretch the frame or
+// sample past it into the neighbouring frames of the atlas (several beams
+// showing at once). The caller builds the mesh at the returned frameW/frameH.
 
 function roundUp4(n) {
   return Math.ceil(n / 4) * 4;
@@ -44,25 +47,28 @@ function getAlphaBBox(img) {
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-// Builds the per-frame source rect to copy from + its atlas metadata.
-function buildFrameRects(frames, fw, fh, trim) {
-  return frames.map((f) => {
-    if (!trim) {
-      return { name: f.name, img: f.img, sx: 0, sy: 0, sw: fw, sh: fh, offX: 0, offY: 0, origW: fw, origH: fh };
-    }
+// Rows to keep when trimming: [top, top + height), symmetric around the
+// frame's centre line and covering the opaque pixels of every frame.
+function sharedVerticalCrop(frames, fh) {
+  let minY = fh, maxY = -1;
+  for (const f of frames) {
     const bbox = getAlphaBBox(f.img);
-    if (!bbox) {
-      // fully transparent frame: keep a minimal 1x1 placeholder so packing
-      // still works, but preserve the original full size via orig/offset
-      return { name: f.name, img: f.img, sx: 0, sy: 0, sw: 1, sh: 1, offX: 0, offY: fh - 1, origW: fw, origH: fh };
-    }
-    return {
-      name: f.name, img: f.img,
-      sx: bbox.x, sy: bbox.y, sw: bbox.w, sh: bbox.h,
-      offX: bbox.x, offY: fh - (bbox.y + bbox.h),
-      origW: fw, origH: fh
-    };
-  });
+    if (!bbox) continue;
+    minY = Math.min(minY, bbox.y);
+    maxY = Math.max(maxY, bbox.y + bbox.h);
+  }
+  if (maxY < 0) return { top: 0, height: fh }; // every frame empty
+  const half = Math.ceil(Math.max(fh / 2 - minY, maxY - fh / 2));
+  const top = Math.max(0, Math.floor(fh / 2 - half));
+  return { top, height: Math.min(fh, Math.ceil(fh / 2 + half)) - top };
+}
+
+// Per-frame source rect to copy from + its atlas metadata (all the same size).
+function buildFrameRects(frames, fw, fh, trim) {
+  const { top, height } = trim ? sharedVerticalCrop(frames, fh) : { top: 0, height: fh };
+  return frames.map((f) => ({
+    name: f.name, img: f.img, sx: 0, sy: top, sw: fw, sh: height, offX: 0, offY: 0, origW: fw, origH: height
+  }));
 }
 
 // Simple shelf (row) packer that supports variable-size rects (needed once
@@ -101,6 +107,7 @@ export function packFrames(frames, padding = 2, maxPageSize = 2048, trim = false
   const fh = frames[0].img.naturalHeight;
 
   const rects = buildFrameRects(frames, fw, fh, trim);
+  const frameH = rects[0].sh;
   const pageBuckets = shelfPack(rects, padding, maxPageSize);
 
   const pages = pageBuckets.map((bucket) => {
@@ -121,7 +128,8 @@ export function packFrames(frames, padding = 2, maxPageSize = 2048, trim = false
     return { canvas, atlasW, atlasH, placements };
   });
 
-  return { pages, frameW: fw, frameH: fh };
+  // frameW/frameH = size of every packed frame; the mesh must be built at this size
+  return { pages, frameW: fw, frameH };
 }
 
 export function buildAtlasText(baseName, packResult) {

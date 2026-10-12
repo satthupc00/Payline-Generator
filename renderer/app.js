@@ -1415,12 +1415,16 @@ el('btnExportAll').addEventListener('click', async () => {
     lead: leadLength()
   }));
 
+  // Trim may have cut empty rows off the frames: the exported mesh is built
+  // at the packed frame size so it exactly covers each atlas region.
+  const exportMesh = buildRibbonMesh(pack.frameW, pack.frameH, state.mesh.boneCount, state.density, state.gridRows, leadLength() <= 0);
+
   const { json } = buildSpineJson({
     skeletonName: state.skeletonName,
     frameNames: state.flipbook.map((f) => f.name),
     frameW: pack.frameW,
     frameH: pack.frameH,
-    mesh: state.mesh,
+    mesh: exportMesh,
     gridCenter,
     patterns: patternsForExport,
     fps: 30,
