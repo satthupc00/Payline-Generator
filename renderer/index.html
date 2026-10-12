@@ -14,21 +14,27 @@
       <img class="brand-icon" src="../build/icon.png" alt="" />
       <div class="brand-text">
         <div class="brand-name"><span class="m">Mondiro</span> <span class="a">Payline Generator</span> <span class="f">- <span id="projectName">New_Payline</span></span><span class="dirty" id="projectDirty" title="Có thay đổi chưa lưu (Ctrl+S để lưu)" hidden>*</span></div>
-        <div class="brand-desc">Vẽ payline trên lưới slot &amp; xuất animation Spine 3.7.94</div>
+        <div class="brand-desc">App gen Payline thay cho Spine</div>
       </div>
     </div>
     <div class="spacer"></div>
     <div class="tools">
-      <button class="btn" id="btnSaveProject" title="Lưu file (Ctrl+S) · Giữ Shift khi bấm (Ctrl+Shift+S) = lưu thành file khác">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5.5 2.5v3.5h5V2.5M5.5 13.5V9.5h5v4"/></svg>Save file</button>
-      <button class="btn" id="btnOpenProject" title="Mở file .payline (Ctrl+O)">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5v8h12v-6.5H8L6.5 4.5z"/><path d="M8 7.5v4M6.3 9.8L8 11.5l1.7-1.7"/></svg>Load file</button>
-      <button class="btn ghost" id="btnNewProject" title="File trống hoàn toàn (Ctrl+N)">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h5.5L12.5 5v9H4z"/><path d="M8.2 7.2v4.6M5.9 9.5h4.6"/></svg>File mới</button>
-      <div class="sep"></div>
       <button class="btn update" id="btnUpdate" title="Kiểm tra bản mới">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.5h-2.5"/></svg><span id="updateText">Cập nhật</span></button>
       <span class="ver" id="appVersion"></span>
+      <div class="sep"></div>
+      <div class="menu" id="fileMenu">
+        <button class="btn" id="btnFileMenu" title="File" aria-haspopup="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h5.5L12.5 5v9H4z"/><path d="M9.5 2v3h3"/></svg>File
+          <svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+        <div class="menu-pop" role="menu">
+          <button class="mi" id="btnSaveProject" role="menuitem"><span>Save File</span><kbd>Ctrl+S</kbd></button>
+          <button class="mi" id="btnSaveAsProject" role="menuitem"><span>Save As...</span><kbd>Ctrl+Shift+S</kbd></button>
+          <div class="mi-sep"></div>
+          <button class="mi" id="btnOpenProject" role="menuitem"><span>Load File</span><kbd>Ctrl+O</kbd></button>
+          <button class="mi" id="btnNewProject" role="menuitem"><span>File mới</span><kbd>Ctrl+N</kbd></button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -37,38 +43,28 @@
 
     <!-- LEFT: patterns + background -->
     <aside class="side left">
-      <div class="sec sec-title"><h3>Patterns</h3></div>
+      <div class="sec sec-title"><h3>Animations List</h3></div>
       <div class="pattern-list" id="patternList"></div>
 
-      <div class="sec" id="bgBrightnessSection" style="display:none;">
-        <div class="sec-head"><h3>Ảnh nền</h3><button class="link" id="btnResetBgAdjust" title="Về mặc định">↺ Reset</button></div>
-        <label class="fl">Độ mờ <b><span id="bgOpacityVal">100</span>%</b></label>
-        <input type="range" id="bgOpacity" min="0" max="100" value="100" step="1" />
-        <label class="fl">Độ sáng <b id="bgBrightnessVal">0</b></label>
-        <input type="range" id="bgBrightness" min="-100" max="100" value="0" step="1" />
-        <div class="row" style="margin-top:8px;">
-          <button class="btn grow" id="btnEditBg" title="Kéo để dời, lăn chuột để phóng to/thu nhỏ">Edit</button>
-          <button class="btn grow" id="btnToggleBg">Ẩn nền</button>
-        </div>
-      </div>
     </aside>
 
     <!-- CENTER: grid editor + preview -->
     <main class="center">
       <div class="stagebar">
         <button class="btn" id="btnGridConfig" title="Cấu hình lưới">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6.7 2v12M9.3 2v12M2 6.7h12M2 9.3h12"/></svg>Grid config</button>
-        <button class="btn" id="btnImportFlipbook" title="Chọn thư mục flipbook (hoặc kéo thả thư mục vào khung Preview)">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5v8h12v-6.5H8L6.5 4.5z"/></svg><span class="lbl">Import flipbook</span></button>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12"/><path d="M6.7 2v12M9.3 2v12M2 6.7h12M2 9.3h12"/></svg>Grid config</button>
         <button class="btn" id="btnImportBg" title="Ảnh nền tham khảo (hoặc kéo thả ảnh vào lưới)">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2.5 11.5l3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/></svg>Background</button>
+        <button class="btn" id="btnEditBg" title="Kéo ảnh nền để dời vị trí" hidden>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.5 2.5l3 3-7.5 7.5H3v-3z"/></svg>Edit Background</button>
+        <label class="chk bgchk" id="hideBgWrap" title="Ẩn / hiện ảnh nền" hidden><input type="checkbox" id="chkHideBg" /> Ẩn nền</label>
         <span class="sbtip">Click ô để đặt điểm · Kéo thả ảnh vào lưới = Background</span>
       </div>
 
       <div class="grid-stage" id="gridStage">
         <canvas id="gridCanvas"></canvas>
         <div id="bgEditControls" class="bg-edit" style="display:none;">
-          <span class="bg-edit-tip">Kéo để dời · Lăn chuột để phóng to</span>
+          <span class="bg-edit-tip">Kéo để dời ảnh nền</span>
           <button class="btn primary" id="btnBgDone">✓ Xong</button>
           <button class="btn" id="btnBgCancel">Huỷ</button>
         </div>
@@ -89,6 +85,8 @@
             <span id="meshOpacityVal" class="num">70</span>%</label>
           <label class="chk"><input type="checkbox" id="toggleBones" /> Bone</label>
           <span class="fr" id="frameLabel">frame 0 / 0</span>
+          <button class="btn sm" id="btnImportFlipbook" title="Chọn thư mục chuỗi ảnh frame-by-frame (hoặc kéo thả thư mục vào khung Preview)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5v8h12v-6.5H8L6.5 4.5z"/></svg><span class="lbl">Import chuỗi ảnh fbf</span></button>
         </div>
         <div class="preview-canvas-wrap">
           <canvas id="previewCanvas"></canvas>
@@ -111,8 +109,8 @@
         <label class="fl">Tên skeleton</label>
         <input type="text" class="in" id="skeletonName" value="PayLine_Skeleton" />
         <label class="fl">Tên animation gốc</label>
-        <input type="text" class="in" id="baseName" value="VFX_Playline" />
-        <div class="hint">Xuất ra: <span id="baseNamePreview">VFX_Playline_01, _02, ...</span></div>
+        <input type="text" class="in" id="baseName" value="Payline" />
+        <div class="hint">Xuất ra: <span id="baseNamePreview">Payline_01, _02, ...</span></div>
       </div>
 
       <div class="sec">
@@ -126,10 +124,8 @@
         <h3>Mesh &amp; Bone</h3>
         <label class="fl">Số hàng mesh <b id="densityVal">40</b></label>
         <input type="range" id="density" min="8" max="200" value="40" step="1" />
-        <div class="hint">Chia mesh dọc theo chiều dài payline, chỉ làm texture mượt hơn, không thêm bone.</div>
         <label class="fl">Số cột mesh <b id="gridRowsVal">2</b></label>
         <input type="range" id="gridRows" min="2" max="20" value="2" step="1" />
-        <div class="hint">Chia theo bề dày payline. Tăng lên nếu thấy gãy ở khúc cong gắt (tối đa 20).</div>
         <label class="fl"><span>Bone đường cong <b id="boneCountVal">24</b></span><span class="chk"><input type="checkbox" id="boneAuto" /> Auto</span></label>
         <input type="range" id="boneCountSlider" min="5" max="200" value="24" step="1" />
         <div class="hint">Auto: tự tính theo độ gắt của các pattern. Tổng bone khi export (gồm bone 2 đầu): <b id="boneTotalVal">–</b></div>
@@ -168,24 +164,14 @@
   <div class="modal">
     <h2>Grid config</h2>
     <div class="mrow">
-      <span>Số reel</span>
-      <div class="row"><input type="number" class="in" id="cfgReels" min="1" max="20" value="5" style="width:80px;" />
-        <button class="btn" id="btnAddReel" title="Thêm 1 reel">+ reel</button></div>
-    </div>
-    <div class="mrow">
-      <span>Kiểu lưới</span>
-      <select class="in" id="cfgGridType">
-        <option value="straight">Thẳng hàng</option>
-        <option value="staggered">So le</option>
-      </select>
-    </div>
-    <div class="mrow" id="cfgStaggerRow" style="display:none;">
-      <span>Độ lệch so le (px)</span>
-      <input type="number" class="in" id="cfgStaggerOffset" value="20" />
+      <span>Số hàng × Số cột</span>
+      <div class="row"><input type="number" class="in" id="cfgRows" min="1" max="12" value="4" title="Số hàng" />
+        <span class="x">×</span>
+        <input type="number" class="in" id="cfgCols" min="1" max="20" value="5" title="Số cột" /></div>
     </div>
     <div class="mrow">
       <span>Kích thước ô (W×H)</span>
-      <div class="row"><input type="number" class="in" id="cfgCellW" value="90" /><input type="number" class="in" id="cfgCellH" value="90" /></div>
+      <div class="row"><input type="number" class="in" id="cfgCellW" value="90" /><span class="x">×</span><input type="number" class="in" id="cfgCellH" value="90" /></div>
     </div>
     <div class="mrow">
       <span>Bone 2 đầu <b><span id="cfgLeadVal">90</span>px</b></span>
@@ -194,10 +180,13 @@
     <div class="hint">Độ dài đoạn thẳng ở 2 đầu (ngoài lưới), 2 đầu bằng nhau. 0 = trùng điểm neo, tối đa = 1 ô.</div>
     <div class="mrow">
       <span>Màu viền ô</span>
-      <input type="color" id="cfgStrokeColor" value="#3a3e46" class="color" />
+      <div class="row">
+        <input type="color" id="cfgStrokeColor" value="#3a3e46" class="color" />
+        <span class="lbl2">Độ trong suốt</span>
+        <input type="range" id="cfgFillOpacity" min="0" max="100" value="10" step="1" />
+        <b class="num" id="cfgFillOpacityVal">10%</b>
+      </div>
     </div>
-    <div class="hint" style="margin-top:12px;">Số hàng mỗi reel (VD megaways: 3,4,5,4,3):</div>
-    <div class="reel-rows-config" id="reelRowsConfig"></div>
     <div class="actions">
       <button class="btn ghost" id="btnCancelGridConfig">Huỷ</button>
       <button class="btn primary" id="btnApplyGridConfig">Áp dụng</button>

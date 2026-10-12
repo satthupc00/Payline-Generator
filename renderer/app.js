@@ -76,6 +76,7 @@ const state = {
     gridType: 'straight',
     staggerOffset: 20,
     strokeColor: '#3a3e46',
+    fillOpacity: 10, // % — cells are just a solid border over a see-through fill
     lead: null      // px, both ends; null = max (one cell size)
   },
   patterns: [],       // { id, name, points: [rowIndex per reel] (or null), tension, warn }
@@ -84,14 +85,12 @@ const state = {
   skeletonName: 'PayLine_Skeleton',
   bgImage: null,       // { img, x, y, scale, locked }
   bgEditing: false,
-  bgBrightness: 0,
-  bgOpacity: 100,
   bgVisible: true,
   density: 40,
   gridRows: 2,
   boneAuto: false,
   boneCount: DEFAULT_BONE_COUNT,
-  baseName: 'VFX_Playline',
+  baseName: 'Payline',
   outputPath: '',
   flipbookDir: null,   // folder the flipbook was loaded from (saved in the project file)
   playing: false,
@@ -200,13 +199,9 @@ function drawGrid() {
   if (state.bgImage && state.bgVisible) {
     const bg = state.bgImage;
     ctx.save();
-    ctx.globalAlpha = (state.bgOpacity ?? 100) / 100;
-    const pct = 100 + (state.bgBrightness || 0);
-    ctx.filter = `brightness(${Math.max(0, pct)}%)`;
     const w = bg.img.naturalWidth * bg.scale;
     const h = bg.img.naturalHeight * bg.scale;
     ctx.drawImage(bg.img, bg.x, bg.y, w, h);
-    ctx.filter = 'none';
     ctx.restore();
     if (state.bgEditing) {
       ctx.strokeStyle = '#E5383B';
@@ -218,12 +213,14 @@ function drawGrid() {
   // grid cells
   layout.columns.forEach((col, r) => {
     col.forEach((cell) => {
-      ctx.fillStyle = '#25282E';
-      ctx.strokeStyle = state.gridConfig.strokeColor || '#3a3e46';
+      const stroke = state.gridConfig.strokeColor || '#3a3e46';
+      ctx.globalAlpha = gridFillOpacity() / 100;
+      ctx.fillStyle = stroke;
+      ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = stroke;
       ctx.lineWidth = 1;
-      roundRect(ctx, cell.x, cell.y, cell.w, cell.h, 6);
-      ctx.fill();
-      ctx.stroke();
+      ctx.strokeRect(cell.x + 0.5, cell.y + 0.5, cell.w - 1, cell.h - 1);
     });
   });
 
@@ -236,8 +233,7 @@ function drawGrid() {
         const cell = col[rowIdx];
         ctx.strokeStyle = '#E5383B';
         ctx.lineWidth = 2;
-        roundRect(ctx, cell.x, cell.y, cell.w, cell.h, 6);
-        ctx.stroke();
+        ctx.strokeRect(cell.x + 1, cell.y + 1, cell.w - 2, cell.h - 2);
       }
     });
 
@@ -353,6 +349,11 @@ function drawGrid() {
 
   ctx.restore();
   updateWarningBox(pattern);
+}
+
+function gridFillOpacity() {
+  const v = Number(state.gridConfig.fillOpacity);
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 10;
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -778,28 +779,6 @@ el('boneCountSlider').addEventListener('input', (e) => {
   if (!state.boneAuto) { rebuildMesh(); renderAll(); }
 });
 
-el('btnResetBgAdjust').addEventListener('click', () => {
-  state.bgOpacity = 100;
-  state.bgBrightness = 0;
-  el('bgOpacity').value = 100;
-  el('bgOpacityVal').textContent = '100';
-  el('bgBrightness').value = 0;
-  el('bgBrightnessVal').textContent = '0';
-  drawGrid();
-});
-
-el('bgOpacity').addEventListener('input', (e) => {
-  state.bgOpacity = Number(e.target.value);
-  el('bgOpacityVal').textContent = e.target.value;
-  drawGrid();
-});
-
-el('bgBrightness').addEventListener('input', (e) => {
-  state.bgBrightness = Number(e.target.value);
-  el('bgBrightnessVal').textContent = e.target.value;
-  drawGrid();
-});
-
 // ==================================================================
 // Flipbook import
 // ==================================================================
@@ -821,7 +800,7 @@ async function applyFlipbook(files) {
   rebuildMesh();
   const btn = el('btnImportFlipbook');
   btn.classList.toggle('imported', !!state.flipbook.length);
-  btn.querySelector('.lbl').textContent = state.flipbook.length ? `Flipbook · ${state.flipbook.length} frame` : 'Import flipbook';
+  btn.querySelector('.lbl').textContent = state.flipbook.length ? `Chuỗi ảnh fbf · ${state.flipbook.length} frame` : 'Import chuỗi ảnh fbf';
 }
 
 function parentDir(p) {
@@ -874,13 +853,10 @@ el('btnImportBg').addEventListener('click', async () => {
 function syncBackgroundUI() {
   const has = !!state.bgImage;
   el('bgEditControls').style.display = has && state.bgEditing ? 'flex' : 'none';
-  el('btnToggleBg').textContent = state.bgVisible ? 'Ẩn nền' : 'Hiện nền';
+  el('btnEditBg').hidden = !has;
+  el('hideBgWrap').hidden = !has;
+  el('chkHideBg').checked = !state.bgVisible;
   el('btnEditBg').classList.toggle('active', has && state.bgEditing);
-  el('bgBrightnessSection').style.display = has ? 'block' : 'none';
-  el('bgOpacity').value = state.bgOpacity;
-  el('bgOpacityVal').textContent = String(state.bgOpacity);
-  el('bgBrightness').value = state.bgBrightness;
-  el('bgBrightnessVal').textContent = String(state.bgBrightness);
 }
 
 el('btnEditBg').addEventListener('click', () => {
@@ -892,9 +868,8 @@ el('btnEditBg').addEventListener('click', () => {
   drawGrid();
 });
 
-el('btnToggleBg').addEventListener('click', () => {
-  state.bgVisible = !state.bgVisible;
-  syncBackgroundUI();
+el('chkHideBg').addEventListener('change', (e) => {
+  state.bgVisible = !e.target.checked;
   drawGrid();
 });
 
@@ -908,23 +883,6 @@ function finishBgEdit(revert) {
 }
 el('btnBgDone').addEventListener('click', () => finishBgEdit(false));
 el('btnBgCancel').addEventListener('click', () => finishBgEdit(true));
-
-// While editing the background: mouse wheel scales it around the cursor.
-gridCanvas.addEventListener('wheel', (e) => {
-  if (!state.bgEditing || !state.bgImage) return;
-  e.preventDefault();
-  const bg = state.bgImage;
-  const r = gridCanvas.getBoundingClientRect();
-  const { offX, offY } = gridSpaceOffset();
-  const gx = e.clientX - r.left - offX, gy = e.clientY - r.top - offY;
-  const factor = e.deltaY > 0 ? 0.95 : 1.05;
-  const scale = Math.max(0.05, Math.min(20, bg.scale * factor));
-  const k = scale / bg.scale;
-  bg.x = gx - (gx - bg.x) * k;
-  bg.y = gy - (gy - bg.y) * k;
-  bg.scale = scale;
-  drawGrid();
-}, { passive: false });
 
 // ==================================================================
 // Drag & drop: a flipbook folder onto the preview, an image onto the grid
@@ -983,33 +941,20 @@ window.addEventListener('drop', (e) => e.preventDefault());
 // Grid config modal
 // ==================================================================
 function openGridConfigModal() {
-  el('cfgReels').value = state.gridConfig.reels;
-  el('cfgGridType').value = state.gridConfig.gridType;
-  el('cfgStaggerOffset').value = state.gridConfig.staggerOffset;
+  el('cfgRows').value = Math.max(...state.gridConfig.rowsPerReel.slice(0, state.gridConfig.reels));
+  el('cfgCols').value = state.gridConfig.reels;
   el('cfgCellW').value = state.gridConfig.cellW;
   el('cfgCellH').value = state.gridConfig.cellH;
   el('cfgStrokeColor').value = state.gridConfig.strokeColor || '#3a3e46';
+  el('cfgFillOpacity').value = gridFillOpacity();
+  el('cfgFillOpacityVal').textContent = `${gridFillOpacity()}%`;
   el('cfgLead').max = String(maxLeadLength());
   el('cfgLead').value = leadLength();
   syncLeadSlider();
-  el('cfgStaggerRow').style.display = state.gridConfig.gridType === 'staggered' ? 'flex' : 'none';
-  renderReelRowsConfig();
   el('gridConfigModal').style.display = 'flex';
+  paintRanges();
 }
-
-function renderReelRowsConfig() {
-  const reels = Number(el('cfgReels').value);
-  const container = el('reelRowsConfig');
-  const rows = state.gridConfig.rowsPerReel.slice(0, reels);
-  while (rows.length < reels) rows.push(4);
-  container.innerHTML = '';
-  rows.forEach((val, i) => {
-    const row = document.createElement('div');
-    row.className = 'reel-row';
-    row.innerHTML = `<span>Reel ${i + 1}</span><input type="number" class="in" min="1" max="12" value="${val}" data-idx="${i}" />`;
-    container.appendChild(row);
-  });
-}
+el('cfgFillOpacity').addEventListener('input', (e) => { el('cfgFillOpacityVal').textContent = `${e.target.value}%`; });
 
 // The end-bone slider goes from 0 (on the reel point) to one cell size, so
 // its max follows the cell size typed in the same dialog.
@@ -1035,34 +980,27 @@ function numOr(value, fallback, min = 0) {
 }
 
 el('btnGridConfig').addEventListener('click', openGridConfigModal);
-el('cfgReels').addEventListener('input', renderReelRowsConfig);
-el('btnAddReel').addEventListener('click', () => {
-  el('cfgReels').value = Number(el('cfgReels').value) + 1;
-  renderReelRowsConfig();
-});
-el('cfgGridType').addEventListener('change', (e) => {
-  el('cfgStaggerRow').style.display = e.target.value === 'staggered' ? 'flex' : 'none';
-});
 el('btnCancelGridConfig').addEventListener('click', () => (el('gridConfigModal').style.display = 'none'));
 
 el('btnApplyGridConfig').addEventListener('click', () => {
-  const reels = Number(el('cfgReels').value);
-  const rowsPerReel = Array.from(el('reelRowsConfig').querySelectorAll('input')).map((i) => Number(i.value) || 3);
+  const reels = Math.round(numOr(el('cfgCols').value, 5, 1));
+  const rows = Math.round(numOr(el('cfgRows').value, 4, 1));
   state.gridConfig = {
     reels,
-    rowsPerReel,
+    rowsPerReel: new Array(reels).fill(rows),
     cellW: numOr(el('cfgCellW').value, 90, 1),
     cellH: numOr(el('cfgCellH').value, 90, 1),
     gap: 0,
-    gridType: el('cfgGridType').value,
-    staggerOffset: Number(el('cfgStaggerOffset').value) || 0,
+    gridType: 'straight',
+    staggerOffset: 0,
     strokeColor: el('cfgStrokeColor').value || '#3a3e46',
+    fillOpacity: numOr(el('cfgFillOpacity').value, 10),
     lead: numOr(el('cfgLead').value, null)
   };
   // reset points (and their tangent overrides) length for patterns
   state.patterns.forEach((p) => {
     const pts = new Array(reels).fill(null);
-    p.points.forEach((v, i) => { if (i < reels) pts[i] = v; });
+    p.points.forEach((v, i) => { if (i < reels && v != null && v < rows) pts[i] = v; });
     p.points = pts;
     const tans = new Array(reels).fill(null);
     (p.tangentOverrides || []).forEach((v, i) => { if (i < reels) tans[i] = v; });
@@ -1110,7 +1048,7 @@ function serializeProject() {
     flipbookDir: state.flipbookDir || null,
     background: bg ? {
       path: bg.path, x: bg.x, y: bg.y, scale: bg.scale,
-      opacity: state.bgOpacity, brightness: state.bgBrightness, visible: state.bgVisible
+      visible: state.bgVisible
     } : null
   };
 }
@@ -1176,7 +1114,7 @@ function confirmDiscard() {
 async function applyProject(data) {
   const settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   Object.assign(state, settings);
-  state.gridConfig = { ...JSON.parse(JSON.stringify(DEFAULT_GRID)), ...(data.gridConfig || {}), gap: 0 };
+  state.gridConfig = { ...JSON.parse(JSON.stringify(DEFAULT_GRID)), ...(data.gridConfig || {}), gap: 0, gridType: 'straight', staggerOffset: 0 };
   state.patterns = [];
   uidCounter = 1;
   (data.patterns || []).forEach((p) => {
@@ -1204,8 +1142,6 @@ async function applyProject(data) {
   state.bgEditing = false;
   state.bgEditBackup = null;
   const bg = data.background;
-  state.bgOpacity = bg && Number.isFinite(bg.opacity) ? bg.opacity : 100;
-  state.bgBrightness = bg && Number.isFinite(bg.brightness) ? bg.brightness : 0;
   state.bgVisible = bg ? bg.visible !== false : true;
   if (bg && bg.path) {
     const f = await window.paylineAPI.readImageFile(bg.path);
@@ -1241,7 +1177,15 @@ function syncControlsFromState() {
   el('tension').value = tension; el('tensionVal').textContent = String(tension);
 }
 
-el('btnSaveProject').addEventListener('click', (e) => saveProject(e.shiftKey));
+const fileMenu = el('fileMenu');
+const closeFileMenu = () => fileMenu.classList.remove('open');
+el('btnFileMenu').addEventListener('click', (e) => { e.stopPropagation(); fileMenu.classList.toggle('open'); });
+document.addEventListener('pointerdown', (e) => { if (!fileMenu.contains(e.target)) closeFileMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFileMenu(); });
+fileMenu.querySelectorAll('.mi').forEach((b) => b.addEventListener('click', closeFileMenu));
+
+el('btnSaveProject').addEventListener('click', () => saveProject(false));
+el('btnSaveAsProject').addEventListener('click', () => saveProject(true));
 
 el('btnOpenProject').addEventListener('click', async () => {
   if (!confirmDiscard()) return;
@@ -1558,9 +1502,8 @@ function updateStatusBar() {
   el('statusFrames').textContent = fb.length
     ? `${fb.length} frame · ${fb[0].img.naturalWidth}×${fb[0].img.naturalHeight}`
     : 'Chưa có flipbook';
-  const rows = state.gridConfig.rowsPerReel.slice(0, state.gridConfig.reels);
-  const same = rows.every((r) => r === rows[0]);
-  el('statusGrid').textContent = `${state.gridConfig.reels} reel × ${same ? rows[0] + ' hàng' : rows.join('-')}`;
+  const rows = Math.max(...state.gridConfig.rowsPerReel.slice(0, state.gridConfig.reels));
+  el('statusGrid').textContent = `Lưới ${rows} hàng × ${state.gridConfig.reels} cột`;
 }
 
 // Sliders show their filled part in red (CSS reads --p).
@@ -1571,10 +1514,17 @@ function paintRanges() {
   });
 }
 document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRanges(); });
+document.addEventListener('pointerdown', (e) => {
+  if (e.target.type !== 'range') return;
+  const r = e.target;
+  r.classList.add('dragging');
+  const stop = () => { r.classList.remove('dragging'); window.removeEventListener('pointerup', stop); };
+  window.addEventListener('pointerup', stop);
+});
 
 // Ripple on click for buttons.
 document.addEventListener('pointerdown', (e) => {
-  const b = e.target.closest('.btn, .new-anim');
+  const b = e.target.closest('.btn, .new-anim, .mi');
   if (!b || b.disabled) return;
   const r = b.getBoundingClientRect();
   const size = Math.max(r.width, r.height);

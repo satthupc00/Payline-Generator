@@ -27,7 +27,7 @@
   const verEl = document.getElementById('appVersion');
   const showVersion = (latest) => {
     if (!verEl) return;
-    verEl.innerHTML = `v${version}` + (latest ? ' · <span class="latest">mới nhất</span>' : '');
+    verEl.innerHTML = `v${version}` + (latest ? ' <span class="latest">latest</span>' : '');
   };
   showVersion(false);
   const refreshLatest = async () => {

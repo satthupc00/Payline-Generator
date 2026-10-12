@@ -32,10 +32,10 @@ cần đăng nhập Admin một lần nữa.
 ## Lưu / mở file làm việc (.payline)
 
 Tên file đang làm hiện ngay sau tiêu đề app: "Mondiro Payline Generator - New_Payline".
-Dấu `*` phía sau = có thay đổi chưa lưu.
+Dấu `*` phía sau = có thay đổi chưa lưu. Các lệnh nằm trong menu **File** ở góc trên bên phải.
 
-- **Save file** (Ctrl+S): lưu. Lần đầu hỏi chỗ lưu và tên file; từ lần sau lưu đè lên file đang mở.
-  Giữ Shift khi bấm (hoặc Ctrl+Shift+S) để lưu thành file khác.
+- **Save File** (Ctrl+S): lưu. Lần đầu hỏi chỗ lưu và tên file; từ lần sau lưu đè lên file đang mở.
+- **Save As...** (Ctrl+Shift+S): lưu thành file khác.
 - **Load file** (Ctrl+O): mở lại 1 file `.payline`.
 - **File mới** (Ctrl+N): bắt đầu file trống hoàn toàn (tên New_Payline).
 
@@ -46,8 +46,8 @@ nên đừng di chuyển/xóa chúng). Tắt app khi chưa lưu sẽ được h�
 ## Kéo thả
 
 - Kéo **thư mục flipbook** (hoặc 1 frame bất kỳ trong thư mục) thả vào khung **Preview** → nạp toàn bộ frame.
-- Kéo **1 ảnh** thả vào khung **lưới** → thành ảnh nền và bật luôn chế độ chỉnh nền
-  (kéo để dời, lăn chuột để phóng to/thu nhỏ, bấm Xong khi chỉnh xong).
+- Kéo **1 ảnh** thả vào khung **lưới** → thành ảnh nền (giữ nguyên kích thước) và bật luôn chế độ chỉnh nền
+  (kéo để dời, bấm Xong khi chỉnh xong). Nút **Edit Background** và ô **Ẩn nền** nằm cạnh nút Background.
 
 ## Cập nhật
 

@@ -94,12 +94,25 @@ button.link:hover { color: var(--red); }
 .in[readonly] { color: var(--muted); text-overflow: ellipsis; }
 input[type="number"].in { font-variant-numeric: tabular-nums; }
 
+/* Slider: red fill up to the value (--p); while dragging, a white light runs
+   across the red part from left to right (--shine animates 0 -> 1). */
+@property --shine { syntax: "<number>"; inherits: false; initial-value: -1; }
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 4px; margin: 6px 0;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--red) var(--p, 50%), var(--line) var(--p, 50%));
+  background-color: var(--line);
+  background-image:
+    linear-gradient(90deg,
+      transparent calc(var(--shine) * 140% - 45%),
+      rgba(255,255,255,.95) calc(var(--shine) * 140% - 20%),
+      transparent calc(var(--shine) * 140% + 5%)),
+    linear-gradient(var(--red), var(--red));
+  background-size: var(--p, 50%) 100%, var(--p, 50%) 100%;
+  background-repeat: no-repeat;
 }
+input[type="range"].dragging { animation: shine .9s linear infinite; }
+@keyframes shine { from { --shine: 0; } to { --shine: 1; } }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px; height: 14px; border-radius: 50%;
@@ -276,7 +289,7 @@ label.fl b { color: var(--text); font-weight: 600; font-variant-numeric: tabular
   display: flex; align-items: center; justify-content: center; animation: fadeIn .15s;
 }
 .modal {
-  width: 400px; max-height: calc(100vh - 60px); overflow-y: auto;
+  width: 430px; max-height: calc(100vh - 60px); overflow-y: auto; overflow-x: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 20px 50px rgba(0,0,0,.45); padding: 18px 18px 14px;
   animation: pop .22s var(--ease);
@@ -365,6 +378,38 @@ input.lock-input:focus { outline: none; border-color: var(--red); box-shadow: 0 
 .admin-key-missing { color: var(--warn); font-size: 11.5px; }
 .admin-row-meta { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* ---------- File menu (header, top right) ---------- */
+.menu { position: relative; }
+.menu .caret { width: 12px; height: 12px; margin-left: -2px; transition: transform .2s var(--ease); }
+.menu.open .caret { transform: rotate(180deg); }
+.menu.open > .btn { border-color: #4A4F58; background: var(--hover); }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 900; min-width: 210px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45); padding: 5px;
+  opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top right;
+  pointer-events: none; transition: opacity .16s, transform .18s var(--ease);
+}
+.menu.open .menu-pop { opacity: 1; transform: none; pointer-events: auto; }
+.mi {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  height: 30px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent;
+  font-size: 12.5px; cursor: pointer; text-align: left; position: relative; overflow: hidden;
+  transition: background .12s, color .12s, padding .15s var(--ease);
+}
+.mi:hover { background: var(--selected-bg); color: #fff; padding-left: 13px; }
+.mi kbd { font: 11px "Segoe UI", system-ui, sans-serif; color: var(--muted); }
+.mi-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+
+.btn.sm { height: 26px; padding: 0 10px; font-size: 12px; }
+.prevbar .btn.sm { color: var(--text); }
+.x { color: var(--muted); flex: 0 0 auto; }
+.lbl2 { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
+.mrow > *, .mrow .row { min-width: 0; }
+.mrow .row input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+.mrow .row .num { font-size: 12px; min-width: 34px; }
+.bgchk { height: 30px; padding: 0 6px; animation: fadeIn .2s; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
