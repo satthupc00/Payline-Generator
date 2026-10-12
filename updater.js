@@ -37,6 +37,15 @@ function notesToText(notes) {
   return raw.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '').trim();
 }
 
+// "Cập nhật" button: check now. Progress comes back through 'update-status' events;
+// an install-ready update is installed by the same button (update-install).
+let checkNow = null;
+ipcMain.handle('update-check', async () => {
+  if (!checkNow) return { result: { state: 'dev' } }; // not an installed copy (npm start)
+  checkNow();
+  return { result: { state: 'checking' } };
+});
+
 function initUpdater(getWindow) {
   if (!app.isPackaged) return;
   const { autoUpdater } = require('electron-updater');
@@ -49,6 +58,8 @@ function initUpdater(getWindow) {
   };
   const install = () => autoUpdater.quitAndInstall(true, true);
 
+  autoUpdater.on('checking-for-update', () => send({ state: 'checking' }));
+  autoUpdater.on('update-not-available', () => send({ state: 'latest' }));
   autoUpdater.on('update-available', info => send({ state: 'downloading', version: info.version, percent: 0 }));
   autoUpdater.on('download-progress', p => send({ state: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', async info => {
@@ -74,7 +85,8 @@ function initUpdater(getWindow) {
 
   ipcMain.on('update-install', install);
 
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  const check = () => autoUpdater.checkForUpdates().catch(() => send({ state: 'error' }));
+  checkNow = check;
   setTimeout(check, 3000);
   setInterval(check, CHECK_EVERY_MS);
 }

@@ -72,10 +72,10 @@ const state = {
   gridConfig: {
     reels: 5,
     rowsPerReel: [4, 4, 4, 4, 4],
-    cellW: 90, cellH: 90, gap: 6,
+    cellW: 90, cellH: 90, gap: 0, // cells always touch
     gridType: 'straight',
     staggerOffset: 20,
-    strokeColor: '#4a2f7a',
+    strokeColor: '#3a3e46',
     lead: null      // px, both ends; null = max (one cell size)
   },
   patterns: [],       // { id, name, points: [rowIndex per reel] (or null), tension, warn }
@@ -209,7 +209,7 @@ function drawGrid() {
     ctx.filter = 'none';
     ctx.restore();
     if (state.bgEditing) {
-      ctx.strokeStyle = '#35e4f5';
+      ctx.strokeStyle = '#E5383B';
       ctx.lineWidth = 1;
       ctx.strokeRect(bg.x, bg.y, w, h);
     }
@@ -218,8 +218,8 @@ function drawGrid() {
   // grid cells
   layout.columns.forEach((col, r) => {
     col.forEach((cell) => {
-      ctx.fillStyle = 'rgba(42,26,74,0.55)';
-      ctx.strokeStyle = state.gridConfig.strokeColor || '#4a2f7a';
+      ctx.fillStyle = '#25282E';
+      ctx.strokeStyle = state.gridConfig.strokeColor || '#3a3e46';
       ctx.lineWidth = 1;
       roundRect(ctx, cell.x, cell.y, cell.w, cell.h, 6);
       ctx.fill();
@@ -234,7 +234,7 @@ function drawGrid() {
       const rowIdx = pattern.points[r];
       if (rowIdx != null && col[rowIdx]) {
         const cell = col[rowIdx];
-        ctx.strokeStyle = '#ff4fa3';
+        ctx.strokeStyle = '#E5383B';
         ctx.lineWidth = 2;
         roundRect(ctx, cell.x, cell.y, cell.w, cell.h, 6);
         ctx.stroke();
@@ -249,13 +249,16 @@ function drawGrid() {
       const { samples, maxTurnAngle } = buildCurve(pts, pattern.tension / 100, effectiveBoneCount(), pattern.tangentOverrides);
       pattern.warn = maxTurnAngle > state.warnAngleThreshold;
       pattern.maxTurnAngle = maxTurnAngle;
-      ctx.strokeStyle = pattern.warn ? '#ffcc33' : '#35e4f5';
+      ctx.strokeStyle = '#F2B84B';
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = pattern.warn ? 'rgba(255,204,51,.6)' : 'rgba(53,228,245,.6)';
+      ctx.shadowColor = 'rgba(242,184,75,.6)';
       ctx.shadowBlur = 8;
+      // a too-sharp curve is drawn dashed (the warning box says why)
+      ctx.setLineDash(pattern.warn ? [9, 6] : []);
       ctx.beginPath();
       samples.forEach((s, i) => (i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y)));
       ctx.stroke();
+      ctx.setLineDash([]);
 
       // straight lead-in / lead-out, flat at the same height (y) as the
       // first/last reel point, ending in the end bones — same neon style
@@ -272,7 +275,7 @@ function drawGrid() {
       ctx.shadowBlur = 0;
 
       // end bones: hollow rings so they read differently from reel points
-      ctx.strokeStyle = pattern.warn ? '#ffcc33' : '#35e4f5';
+      ctx.strokeStyle = '#F2B84B';
       ctx.lineWidth = 1.5;
       [endIn, endOut].forEach((b) => {
         ctx.beginPath();
@@ -283,12 +286,12 @@ function drawGrid() {
       const selected = pattern.selectedReels || [];
       pts.forEach((p, i) => {
         const isSel = selected.includes(i);
-        ctx.fillStyle = pattern.warn ? '#ffcc33' : '#ff4fa3';
+        ctx.fillStyle = '#F2B84B';
         ctx.beginPath();
         ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
         ctx.fill();
         if (isSel) {
-          ctx.strokeStyle = '#4ade80';
+          ctx.strokeStyle = '#ECE8E0';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
@@ -312,8 +315,8 @@ function drawGrid() {
       // space (no drag) to clear the selection.
       if (selected.length) {
         const handles = getHandleVectors(pts, pattern.tangentOverrides);
-        ctx.strokeStyle = '#4ade80';
-        ctx.fillStyle = '#4ade80';
+        ctx.strokeStyle = '#ECE8E0';
+        ctx.fillStyle = '#ECE8E0';
         ctx.lineWidth = 1.5;
         ctx.shadowBlur = 0;
         selected.forEach((i) => {
@@ -338,8 +341,8 @@ function drawGrid() {
   // live rubber-band selection rectangle, drawn in grid-layout space
   // (inside the same ctx.translate as everything else above)
   if (dragSelectRect) {
-    ctx.strokeStyle = '#4ade80';
-    ctx.fillStyle = 'rgba(74,222,128,0.12)';
+    ctx.strokeStyle = '#ECE8E0';
+    ctx.fillStyle = 'rgba(236,232,224,0.10)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     const { x0, y0, x1, y1 } = dragSelectRect;
@@ -684,34 +687,53 @@ window.addEventListener('resize', () => { drawGrid(); drawPreview(); });
 // ==================================================================
 // Pattern list UI
 // ==================================================================
+const ICON_CLONE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h7"/></svg>';
+const ICON_DELETE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9"/></svg>';
+const escapeHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let renderedPatternIds = new Set();
 function renderPatternList() {
   patternListEl.innerHTML = '';
-  state.patterns.forEach((p) => {
+  state.patterns.forEach((p, i) => {
     const row = document.createElement('div');
     row.className = 'pattern-row' + (p.id === state.activePatternId ? ' active' : '');
+    // slide-in only for rows that are new since the last draw (the list is redrawn often)
+    if (renderedPatternIds.has(p.id)) row.style.animation = 'none';
+    else row.style.animationDelay = `${Math.min(i, 8) * 0.03}s`;
     row.innerHTML = `
-      <span class="name">${p.name}</span>
-      ${p.warn ? '<span class="warn" title="Khúc cong quá gắt">⚠</span>' : ''}
+      <span class="idx">${String(i + 1).padStart(2, '0')}</span>
+      <span class="name">${escapeHtml(p.name)}</span>
+      ${p.warn ? '<span class="warn" title="Khúc cong quá gắt">▲</span>' : ''}
       <span class="row-actions">
-        <span data-act="clone" title="Clone">⧉</span>
-        <span data-act="delete" title="Xoá">🗑</span>
+        <button class="ib" data-act="clone" title="Nhân bản">${ICON_CLONE}</button>
+        <button class="ib del" data-act="delete" title="Xoá">${ICON_DELETE}</button>
       </span>
     `;
     row.addEventListener('click', (e) => {
-      const act = e.target.dataset.act;
+      const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'clone') { addPattern(p); return; }
       if (act === 'delete') { deletePattern(p.id); return; }
       state.activePatternId = p.id;
+      const t = el('tension');
+      t.value = p.tension; el('tensionVal').textContent = String(p.tension);
       renderAll();
     });
     patternListEl.appendChild(row);
   });
+  const add = document.createElement('button');
+  add.className = 'new-anim';
+  add.title = 'Thêm animation mới';
+  add.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>New Animation';
+  add.addEventListener('click', () => addPattern(null));
+  patternListEl.appendChild(add);
+  renderedPatternIds = new Set(state.patterns.map((p) => p.id));
+
   el('exportCount').textContent = state.patterns.filter((p) => patternPoints(p)).length;
   el('boneTotalVal').textContent = rigBoneCount(effectiveBoneCount());
   el('baseNamePreview').textContent = `${state.baseName}_01, _02, ...`;
 }
 
-el('btnAddPattern').addEventListener('click', () => addPattern(null));
+
 
 el('skeletonName').addEventListener('input', (e) => {
   state.skeletonName = e.target.value.trim() || 'Skeleton';
@@ -799,7 +821,7 @@ async function applyFlipbook(files) {
   rebuildMesh();
   const btn = el('btnImportFlipbook');
   btn.classList.toggle('imported', !!state.flipbook.length);
-  btn.textContent = state.flipbook.length ? `✓ Flipbook (${state.flipbook.length} frame)` : '📁 Import flipbook (folder)';
+  btn.querySelector('.lbl').textContent = state.flipbook.length ? `Flipbook · ${state.flipbook.length} frame` : 'Import flipbook';
 }
 
 function parentDir(p) {
@@ -845,22 +867,15 @@ function syncBoneSliderMin() {
 el('btnImportBg').addEventListener('click', async () => {
   const f = await window.paylineAPI.openSingleImage();
   if (!f) return;
-  const img = await loadImage(f.dataUrl);
-  state.bgImage = { img, path: f.path, x: 0, y: 0, scale: 1, locked: false };
-  state.bgEditBackup = null;
-  state.bgEditing = true;
-  state.bgVisible = true;
-  syncBackgroundUI();
-  drawGrid();
+  await setBackgroundFromFile(f);
 });
 
 // Shows/hides the background buttons and sliders to match state.bgImage.
 function syncBackgroundUI() {
   const has = !!state.bgImage;
   el('bgEditControls').style.display = has && state.bgEditing ? 'flex' : 'none';
-  el('btnEditBg').style.display = has ? 'inline-block' : 'none';
-  el('btnToggleBg').style.display = has ? 'inline-block' : 'none';
-  el('btnToggleBg').textContent = state.bgVisible ? '👁 Ẩn nền' : '🚫 Hiện nền';
+  el('btnToggleBg').textContent = state.bgVisible ? 'Ẩn nền' : 'Hiện nền';
+  el('btnEditBg').classList.toggle('active', has && state.bgEditing);
   el('bgBrightnessSection').style.display = has ? 'block' : 'none';
   el('bgOpacity').value = state.bgOpacity;
   el('bgOpacityVal').textContent = String(state.bgOpacity);
@@ -873,34 +888,96 @@ el('btnEditBg').addEventListener('click', () => {
   state.bgEditBackup = { x: state.bgImage.x, y: state.bgImage.y, scale: state.bgImage.scale };
   state.bgEditing = true;
   state.bgImage.locked = false;
-  el('bgEditControls').style.display = 'flex';
+  syncBackgroundUI();
   drawGrid();
 });
 
 el('btnToggleBg').addEventListener('click', () => {
   state.bgVisible = !state.bgVisible;
-  el('btnToggleBg').textContent = state.bgVisible ? '👁 Ẩn nền' : '🚫 Hiện nền';
+  syncBackgroundUI();
   drawGrid();
 });
 
-el('btnBgDone').addEventListener('click', () => {
+function finishBgEdit(revert) {
   state.bgEditing = false;
+  if (revert && state.bgImage && state.bgEditBackup) Object.assign(state.bgImage, state.bgEditBackup);
   if (state.bgImage) state.bgImage.locked = true;
   state.bgEditBackup = null;
-  el('bgEditControls').style.display = 'none';
+  syncBackgroundUI();
   drawGrid();
+}
+el('btnBgDone').addEventListener('click', () => finishBgEdit(false));
+el('btnBgCancel').addEventListener('click', () => finishBgEdit(true));
+
+// While editing the background: mouse wheel scales it around the cursor.
+gridCanvas.addEventListener('wheel', (e) => {
+  if (!state.bgEditing || !state.bgImage) return;
+  e.preventDefault();
+  const bg = state.bgImage;
+  const r = gridCanvas.getBoundingClientRect();
+  const { offX, offY } = gridSpaceOffset();
+  const gx = e.clientX - r.left - offX, gy = e.clientY - r.top - offY;
+  const factor = e.deltaY > 0 ? 0.95 : 1.05;
+  const scale = Math.max(0.05, Math.min(20, bg.scale * factor));
+  const k = scale / bg.scale;
+  bg.x = gx - (gx - bg.x) * k;
+  bg.y = gy - (gy - bg.y) * k;
+  bg.scale = scale;
+  drawGrid();
+}, { passive: false });
+
+// ==================================================================
+// Drag & drop: a flipbook folder onto the preview, an image onto the grid
+// ==================================================================
+const IMAGE_RE = /\.(png|jpe?g)$/i;
+
+// Background from a file { path, name, dataUrl }; starts editing it straight away.
+async function setBackgroundFromFile(f) {
+  const img = await loadImage(f.dataUrl);
+  state.bgImage = { img, path: f.path, x: 0, y: 0, scale: 1, locked: false };
+  state.bgEditBackup = null;
+  state.bgEditing = true;
+  state.bgVisible = true;
+  syncBackgroundUI();
+  drawGrid();
+}
+
+function setupDropZone(zone, onDrop) {
+  let depth = 0;
+  zone.addEventListener('dragenter', (e) => { e.preventDefault(); depth++; zone.classList.add('drag-over'); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  zone.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; zone.classList.remove('drag-over'); } });
+  zone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    depth = 0;
+    zone.classList.remove('drag-over');
+    const paths = [...e.dataTransfer.files].map((f) => window.paylineAPI.pathForFile(f)).filter(Boolean);
+    if (paths.length) await onDrop(paths);
+  });
+}
+
+// Preview: a folder of frames (dropping one frame file loads its whole folder).
+setupDropZone(el('previewStrip'), async (paths) => {
+  let files = await window.paylineAPI.readFlipbookFolder(paths[0]);
+  if (!files.length && IMAGE_RE.test(paths[0])) files = await window.paylineAPI.readFlipbookFolder(parentDir(paths[0]));
+  if (!files.length) return toast('Không tìm thấy ảnh PNG/JPG nào trong thư mục vừa thả.');
+  await applyFlipbook(files);
+  renderAll();
+  toast(`Đã nạp ${state.flipbook.length} frame flipbook.`);
 });
 
-el('btnBgCancel').addEventListener('click', () => {
-  state.bgEditing = false;
-  if (state.bgImage && state.bgEditBackup) {
-    Object.assign(state.bgImage, state.bgEditBackup);
-  }
-  if (state.bgImage) state.bgImage.locked = true;
-  state.bgEditBackup = null;
-  el('bgEditControls').style.display = 'none';
-  drawGrid();
+// Grid: one image becomes the background.
+setupDropZone(gridStage, async (paths) => {
+  const p = paths.find((x) => IMAGE_RE.test(x));
+  if (!p) return toast('Hãy thả 1 file ảnh PNG/JPG vào lưới để làm Background.');
+  const f = await window.paylineAPI.readImageFile(p);
+  if (!f) return toast('Không đọc được ảnh này.');
+  await setBackgroundFromFile(f);
 });
+
+// Dropping anywhere else must not navigate the window to the file.
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
 
 // ==================================================================
 // Grid config modal
@@ -911,8 +988,7 @@ function openGridConfigModal() {
   el('cfgStaggerOffset').value = state.gridConfig.staggerOffset;
   el('cfgCellW').value = state.gridConfig.cellW;
   el('cfgCellH').value = state.gridConfig.cellH;
-  el('cfgGap').value = state.gridConfig.gap;
-  el('cfgStrokeColor').value = state.gridConfig.strokeColor || '#4a2f7a';
+  el('cfgStrokeColor').value = state.gridConfig.strokeColor || '#3a3e46';
   el('cfgLead').max = String(maxLeadLength());
   el('cfgLead').value = leadLength();
   syncLeadSlider();
@@ -930,7 +1006,7 @@ function renderReelRowsConfig() {
   rows.forEach((val, i) => {
     const row = document.createElement('div');
     row.className = 'reel-row';
-    row.innerHTML = `<span>Reel ${i + 1}</span><input type="number" min="1" max="12" value="${val}" data-idx="${i}" style="flex:1;" />`;
+    row.innerHTML = `<span>Reel ${i + 1}</span><input type="number" class="in" min="1" max="12" value="${val}" data-idx="${i}" />`;
     container.appendChild(row);
   });
 }
@@ -977,10 +1053,10 @@ el('btnApplyGridConfig').addEventListener('click', () => {
     rowsPerReel,
     cellW: numOr(el('cfgCellW').value, 90, 1),
     cellH: numOr(el('cfgCellH').value, 90, 1),
-    gap: numOr(el('cfgGap').value, 6),
+    gap: 0,
     gridType: el('cfgGridType').value,
     staggerOffset: Number(el('cfgStaggerOffset').value) || 0,
-    strokeColor: el('cfgStrokeColor').value || '#4a2f7a',
+    strokeColor: el('cfgStrokeColor').value || '#3a3e46',
     lead: numOr(el('cfgLead').value, null)
   };
   // reset points (and their tangent overrides) length for patterns
@@ -1043,6 +1119,13 @@ function fileNameOf(p) {
   return p ? p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) : null;
 }
 
+const NEW_FILE_NAME = 'New_Payline';
+// Name shown after the app title: file name without ".payline", or New_Payline.
+function displayName() {
+  const n = fileNameOf(currentFilePath);
+  return n ? n.replace(/\.payline$/i, '') : NEW_FILE_NAME;
+}
+
 // Which pattern is selected is saved, but just clicking another one isn't an edit.
 function snapshot() {
   return JSON.stringify({ ...serializeProject(), activePattern: 0 });
@@ -1058,22 +1141,22 @@ function markSaved() {
 }
 
 // File name in the left panel + window title; "●" = unsaved changes.
+// "Mondiro Payline Generator - <file>" + "*" while there are unsaved changes.
 function updateFileStatus() {
-  const name = fileNameOf(currentFilePath) || 'Chưa lưu (file mới)';
   const dirty = isDirty();
-  el('projectName').textContent = name;
-  el('projectName').title = currentFilePath || '';
+  el('projectName').textContent = displayName();
+  el('projectName').title = currentFilePath || 'Chưa lưu';
   el('projectDirty').hidden = !dirty;
   window.paylineAPI.setDirty(dirty); // main process asks before closing with unsaved changes
-  const version = window.licenseAPI ? window.licenseAPI.appVersion : '';
-  document.title = `${dirty ? '● ' : ''}${fileNameOf(currentFilePath) || 'Untitled'} — Mondiro Payline Generator v${version}`;
+  document.title = `Mondiro Payline Generator - ${displayName()}${dirty ? '*' : ''}`;
+  paintRanges();
 }
 
 async function saveProject(saveAs = false) {
   const res = await window.paylineAPI.saveProject({
     filePath: currentFilePath,
     data: serializeProject(),
-    suggestedName: state.skeletonName,
+    suggestedName: NEW_FILE_NAME,
     saveAs
   });
   if (res && res.ok) {
@@ -1093,7 +1176,7 @@ function confirmDiscard() {
 async function applyProject(data) {
   const settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   Object.assign(state, settings);
-  state.gridConfig = { ...JSON.parse(JSON.stringify(DEFAULT_GRID)), ...(data.gridConfig || {}) };
+  state.gridConfig = { ...JSON.parse(JSON.stringify(DEFAULT_GRID)), ...(data.gridConfig || {}), gap: 0 };
   state.patterns = [];
   uidCounter = 1;
   (data.patterns || []).forEach((p) => {
@@ -1179,11 +1262,13 @@ el('btnNewProject').addEventListener('click', async () => {
   markSaved();
 });
 
-// Ctrl+S = save, Ctrl+Shift+S = save as a new file
+// Ctrl+S = save (Ctrl+Shift+S = save as), Ctrl+O = load, Ctrl+N = new file
 window.addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
-  e.preventDefault();
-  saveProject(e.shiftKey);
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 's') { e.preventDefault(); saveProject(e.shiftKey); }
+  else if (k === 'o' && !e.shiftKey) { e.preventDefault(); el('btnOpenProject').click(); }
+  else if (k === 'n' && !e.shiftKey) { e.preventDefault(); el('btnNewProject').click(); }
 });
 
 // Cheap enough to just poll: keeps the "●" unsaved marker right whatever was changed.
@@ -1284,13 +1369,13 @@ function drawPreview() {
   }
 
   if (state.showBones) {
-    ctx.strokeStyle = 'rgba(255,79,163,.9)';
+    ctx.strokeStyle = 'rgba(229,56,59,.9)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     boneWorldPos.forEach((bp, i) => (i === 0 ? ctx.moveTo(bp.x, bp.y) : ctx.lineTo(bp.x, bp.y)));
     ctx.stroke();
     boneWorldPos.forEach((bp) => {
-      ctx.fillStyle = '#ff4fa3';
+      ctx.fillStyle = '#E5383B';
       ctx.beginPath();
       ctx.arc(bp.x, bp.y, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -1464,7 +1549,41 @@ function renderAll() {
   renderPatternList();
   drawGrid();
   drawPreview();
+  updateStatusBar();
+  paintRanges();
 }
+
+function updateStatusBar() {
+  const fb = state.flipbook;
+  el('statusFrames').textContent = fb.length
+    ? `${fb.length} frame · ${fb[0].img.naturalWidth}×${fb[0].img.naturalHeight}`
+    : 'Chưa có flipbook';
+  const rows = state.gridConfig.rowsPerReel.slice(0, state.gridConfig.reels);
+  const same = rows.every((r) => r === rows[0]);
+  el('statusGrid').textContent = `${state.gridConfig.reels} reel × ${same ? rows[0] + ' hàng' : rows.join('-')}`;
+}
+
+// Sliders show their filled part in red (CSS reads --p).
+function paintRanges() {
+  document.querySelectorAll('input[type="range"]').forEach((r) => {
+    const min = Number(r.min) || 0, max = Number(r.max) || 100;
+    r.style.setProperty('--p', `${((Number(r.value) - min) / (max - min || 1)) * 100}%`);
+  });
+}
+document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRanges(); });
+
+// Ripple on click for buttons.
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('.btn, .new-anim');
+  if (!b || b.disabled) return;
+  const r = b.getBoundingClientRect();
+  const size = Math.max(r.width, r.height);
+  const sp = document.createElement('span');
+  sp.className = 'ripple';
+  sp.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px`;
+  b.appendChild(sp);
+  setTimeout(() => sp.remove(), 520);
+});
 
 (async function init() {
   addPattern(null);

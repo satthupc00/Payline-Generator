@@ -31,16 +31,28 @@ cần đăng nhập Admin một lần nữa.
 
 ## Lưu / mở file làm việc (.payline)
 
-Khung **File** ở góc dưới bên trái hiện tên file đang làm (dấu ● màu vàng = có thay đổi chưa lưu).
+Tên file đang làm hiện ngay sau tiêu đề app: "Mondiro Payline Generator - New_Payline".
+Dấu `*` phía sau = có thay đổi chưa lưu.
 
-- **⇪ Xuất file** (Ctrl+S): lưu. Lần đầu sẽ hỏi chỗ lưu và tên file; từ lần sau lưu đè lên file đang mở.
+- **Save file** (Ctrl+S): lưu. Lần đầu hỏi chỗ lưu và tên file; từ lần sau lưu đè lên file đang mở.
   Giữ Shift khi bấm (hoặc Ctrl+Shift+S) để lưu thành file khác.
-- **⇩ Nhập file**: mở lại 1 file `.payline`.
-- **＋ File mới**: bắt đầu file trống hoàn toàn.
+- **Load file** (Ctrl+O): mở lại 1 file `.payline`.
+- **File mới** (Ctrl+N): bắt đầu file trống hoàn toàn (tên New_Payline).
 
 File lưu toàn bộ phiên làm việc: lưới, tất cả pattern (điểm, tay cầm đường cong, tension), các thông số
 bên phải, thư mục output, và **đường dẫn** tới thư mục flipbook + ảnh nền (ảnh không nằm trong file,
 nên đừng di chuyển/xóa chúng). Tắt app khi chưa lưu sẽ được hỏi lại.
+
+## Kéo thả
+
+- Kéo **thư mục flipbook** (hoặc 1 frame bất kỳ trong thư mục) thả vào khung **Preview** → nạp toàn bộ frame.
+- Kéo **1 ảnh** thả vào khung **lưới** → thành ảnh nền và bật luôn chế độ chỉnh nền
+  (kéo để dời, lăn chuột để phóng to/thu nhỏ, bấm Xong khi chỉnh xong).
+
+## Cập nhật
+
+App tự kiểm tra bản mới lúc mở và mỗi 1 tiếng. Muốn kiểm tra ngay thì bấm nút **Cập nhật** trên header;
+khi bản mới tải xong, nút chuyển đỏ "Cập nhật vX.Y.Z", bấm vào để khởi động lại và cài.
 
 ## Phát hành bản mới (tự động cập nhật)
 

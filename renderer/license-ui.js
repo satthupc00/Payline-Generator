@@ -22,21 +22,21 @@
     return node;
   };
 
-  // ---- version in brand + title ----
+  // ---- version next to the update button ----
   const version = api.appVersion;
-  const brandWhite = document.querySelector('.topbar .brand .brand-rest');
-  if (brandWhite) brandWhite.textContent = `Payline Generator v${version}`;
-  document.title = `Mondiro Payline Generator v${version}`;
-
-  // "(latest)" in green after the version while this copy is the newest release on GitHub.
-  const latestTag = el('span', { class: 'brand-latest', text: '(latest)', hidden: '' });
-  if (brandWhite) brandWhite.after(latestTag);
+  const verEl = document.getElementById('appVersion');
+  const showVersion = (latest) => {
+    if (!verEl) return;
+    verEl.innerHTML = `v${version}` + (latest ? ' · <span class="latest">mới nhất</span>' : '');
+  };
+  showVersion(false);
   const refreshLatest = async () => {
     try {
       const latest = await call('check-latest');
-      if (latest !== null) latestTag.hidden = !latest;
+      if (latest !== null && !updateReady) showVersion(latest);
     } catch (e) { /* keep the previous state */ }
   };
+  let updateReady = false;
   refreshLatest();
   setInterval(refreshLatest, 60 * 60 * 1000);
 
@@ -64,7 +64,21 @@
   ]);
   document.body.append(lockOverlay);
 
+  const keyPill = document.getElementById('statusKey');
+  function showKeyStatus(status) {
+    if (!keyPill) return;
+    const ok = !!(status && status.ok);
+    keyPill.classList.toggle('ok', ok);
+    keyPill.classList.toggle('bad', !ok);
+    const text = !ok ? 'Chưa kích hoạt'
+      : status.mode === 'admin' ? 'Admin'
+      : status.mode === 'offline' ? `Key: ${status.name || ''} (offline)`
+      : `Key: ${status.name || ''}`;
+    keyPill.querySelector('span').textContent = text;
+  }
+
   function applyStatus(status) {
+    showKeyStatus(status);
     if (status && status.ok) {
       lockOverlay.hidden = true;
       return;
@@ -92,30 +106,44 @@
   retryBtn.addEventListener('click', check);
   api.onLicenseStatus(applyStatus);
 
-  // ---- update pill, next to the app name in the top bar ----
-  const updatePill = el('button', { id: 'update-pill', class: 'top-pill', hidden: '' });
-  const brand = document.querySelector('.topbar .brand');
-  if (brand) brand.append(updatePill); else document.body.append(updatePill);
+  // ---- "Cập nhật" button in the header ----
+  const updBtn = document.getElementById('btnUpdate');
+  const updText = document.getElementById('updateText');
+  let updState = 'idle';
+  let resetTimer = null;
+  const setUpd = (state, text, title) => {
+    updState = state;
+    clearTimeout(resetTimer);
+    updBtn.classList.toggle('checking', state === 'checking');
+    updBtn.classList.toggle('primary', state === 'ready');
+    updBtn.disabled = state === 'checking' || state === 'downloading';
+    updText.innerHTML = state === 'ready' ? `<span class="dot"></span> ${text}` : text;
+    updBtn.title = title || 'Kiểm tra bản mới';
+  };
+  const resetLater = () => { resetTimer = setTimeout(() => setUpd('idle', 'Cập nhật'), 4000); };
 
   api.onUpdateStatus((s) => {
-    if (s.state !== 'error') latestTag.hidden = true;
-    if (s.state === 'downloading') {
-      if (s.version) updatePill.dataset.version = s.version;
-      updatePill.hidden = false;
-      updatePill.disabled = true;
-      updatePill.classList.remove('ready');
-      updatePill.textContent = `Đang tải v${updatePill.dataset.version || ''}… ${s.percent || 0}%`;
+    if (s.state === 'checking') setUpd('checking', 'Đang kiểm tra…');
+    else if (s.state === 'latest') { setUpd('idle', 'Đã mới nhất'); showVersion(true); resetLater(); }
+    else if (s.state === 'downloading') {
+      if (s.version) updBtn.dataset.version = s.version;
+      setUpd('downloading', `Đang tải ${s.percent || 0}%`, `Đang tải v${updBtn.dataset.version || ''}`);
+      showVersion(false);
     } else if (s.state === 'ready') {
-      updatePill.hidden = false;
-      updatePill.disabled = false;
-      updatePill.classList.add('ready');
-      updatePill.textContent = `Cập nhật v${s.version} ↻`;
-      updatePill.title = 'Khởi động lại app để cài bản mới';
-    } else if (s.state === 'error' && !updatePill.classList.contains('ready')) {
-      updatePill.hidden = true;
-    }
+      updateReady = true;
+      setUpd('ready', `Cập nhật v${s.version}`, 'Khởi động lại app để cài bản mới');
+      showVersion(false);
+    } else if (s.state === 'error' && updState !== 'ready') { setUpd('idle', 'Lỗi kiểm tra'); resetLater(); }
   });
-  updatePill.addEventListener('click', () => api.installUpdate());
+
+  updBtn.addEventListener('click', async () => {
+    if (updState === 'ready') { api.installUpdate(); return; }
+    setUpd('checking', 'Đang kiểm tra…');
+    try {
+      const r = await call('update-check');
+      if (r && r.state === 'dev') { setUpd('idle', 'Chỉ có ở bản cài'); resetLater(); }
+    } catch (e) { setUpd('idle', 'Lỗi kiểm tra'); resetLater(); }
+  });
 
   // ---- Admin panel ----
   const adminBody = el('div', { class: 'admin-body' });

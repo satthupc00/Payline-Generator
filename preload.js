@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('paylineAPI', {
   openImages: () => ipcRenderer.invoke('dialog:openImages'),
@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld('paylineAPI', {
   readImageFile: (p) => ipcRenderer.invoke('fs:readImageFile', p),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
   openProject: () => ipcRenderer.invoke('project:open'),
-  setDirty: (dirty) => ipcRenderer.send('project:dirty', !!dirty)
+  setDirty: (dirty) => ipcRenderer.send('project:dirty', !!dirty),
+  // full path of a file/folder dropped onto the window
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } }
 });
 
 // Lock screen, Admin panel and update pill (renderer/license-ui.js). Handlers live in license.js / updater.js.
@@ -18,7 +20,7 @@ contextBridge.exposeInMainWorld('licenseAPI', {
   appVersion: ipcRenderer.sendSync('get-app-version'),
   invoke: (channel, ...args) => {
     const allowed = ['license-check', 'license-activate', 'admin-status', 'admin-login', 'admin-logout',
-      'admin-list', 'admin-add', 'admin-set-active', 'admin-remove', 'admin-regenerate', 'clipboard-write', 'check-latest'];
+      'admin-list', 'admin-add', 'admin-set-active', 'admin-remove', 'admin-regenerate', 'clipboard-write', 'check-latest', 'update-check'];
     if (!allowed.includes(channel)) return Promise.reject(new Error('Kênh không hợp lệ: ' + channel));
     return ipcRenderer.invoke(channel, ...args);
   },
