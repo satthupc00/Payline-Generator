@@ -1995,13 +1995,15 @@ async function sampleProject() {
 
 const closeStart = () => { el('startModal').style.display = 'none'; };
 el('startBlank').addEventListener('click', closeStart);
-el('startSample').addEventListener('click', async () => {
-  closeStart();
+async function openSample() {
   await applyProject(await sampleProject());
   currentFilePath = null;
   markSaved();
   toast('Đã mở file mẫu: bấm tab "Chuỗi ảnh fbf" / "Dây nối điểm" để xem 2 kiểu.');
-});
+}
+el('startSample').addEventListener('click', () => { closeStart(); openSample(); });
+// File menu → File mẫu (asks first if the current file has unsaved changes)
+el('btnSampleProject').addEventListener('click', () => { if (confirmDiscard()) openSample(); });
 el('startOpen').addEventListener('click', () => { closeStart(); el('btnOpenProject').click(); });
 
 (async function init() {

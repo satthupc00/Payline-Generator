@@ -72,6 +72,7 @@ Dấu `*` phía sau = có thay đổi chưa lưu. Các lệnh nằm trong menu *
 - **Save As...** (Ctrl+Shift+S): lưu thành file khác.
 - **Load file** (Ctrl+O): mở lại 1 file `.payline`.
 - **File mới** (Ctrl+N): bắt đầu file trống hoàn toàn (tên New_Payline).
+- **File mẫu**: mở file mẫu có sẵn 2 kiểu payline (cũng có ở màn hình lúc mở app).
 
 File lưu toàn bộ phiên làm việc: lưới, tất cả pattern (điểm, tay cầm đường cong, tension), các thông số
 bên phải, thư mục output, và **đường dẫn** tới thư mục flipbook + ảnh nền (ảnh không nằm trong file,
