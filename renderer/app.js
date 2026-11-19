@@ -2,7 +2,7 @@ import { buildGridLayout } from './modules/grid.js';
 import { buildCurve, buildRigSamples, computeTangents, getHandleVectors, computeAutoTangents } from './modules/spline.js';
 import { buildRibbonMesh, skinVertices } from './modules/mesh.js';
 import { packFrames, packImages, buildAtlasText, pageFileName } from './modules/atlasPacker.js';
-import { CHAIN_DEFAULTS, segmentKind, segmentGeometry, chainDuration, chainStateAt, buildChainSpineJson } from './modules/chain.js';
+import { CHAIN_DEFAULTS, CHAIN_SLOTS, pickStrip, segmentGeometry, chainDuration, chainStateAt, buildChainSpineJson } from './modules/chain.js';
 import { buildSpineJson } from './modules/spineExport.js';
 
 // ---------------- state ----------------
@@ -97,8 +97,8 @@ const state = {
   style: 'fbf',        // which payline style the right panel / preview show: 'fbf' | 'chain'
   chain: {
     params: { ...CHAIN_DEFAULTS },
-    // strip images per direction + their light overlays: { path, name, img } or null
-    images: { h: null, hLight: null, d: null, dLight: null, v: null, vLight: null }
+    // straight strip images (short / medium / long) + their light overlays: { path, name, img } or null
+    images: { s1: null, s1Light: null, s2: null, s2Light: null, s3: null, s3Light: null }
   },
   playing: false,
   scrubIndex: 0,
@@ -1241,6 +1241,11 @@ async function applyProject(data) {
   // chain style: parameters + strip images (re-read from disk)
   const ch = data.chain || {};
   state.chain.params = { ...CHAIN_DEFAULTS, ...(ch.params || {}) };
+  if (ch.images && !('s1' in ch.images) && ('h' in ch.images || 'd' in ch.images || 'v' in ch.images)) {
+    // v2.2.0–2.2.1 had angle slots (ngang / chéo / dọc): keep the images, in that order
+    const old = ch.images;
+    ch.images = { s1: old.h, s1Light: old.hLight, s2: old.d, s2Light: old.dLight, s3: old.v, s3Light: old.vLight };
+  }
   for (const slot of Object.keys(state.chain.images)) {
     const pth = ch.images && ch.images[slot];
     state.chain.images[slot] = null;
@@ -1439,13 +1444,17 @@ function drawPreview() {
 const CHAIN_FPS = 30;
 const CHAIN_MASK_MARGIN = 60;
 
-function chainAvailable() {
-  const im = state.chain.images;
-  return { h: !!im.h, d: !!im.d, v: !!im.v };
+// { s1: { w, h } | null, ... } of the strip images that are loaded
+function chainSizes() {
+  const out = {};
+  CHAIN_SLOTS.forEach((k) => {
+    const r = state.chain.images[k];
+    out[k] = r ? { w: r.img.naturalWidth, h: r.img.naturalHeight } : null;
+  });
+  return out;
 }
 function hasChainImages() {
-  const a = chainAvailable();
-  return a.h || a.d || a.v;
+  return CHAIN_SLOTS.some((k) => state.chain.images[k]);
 }
 function chainSegCount() {
   const p = activePattern();
@@ -1496,30 +1505,32 @@ function drawChainPreview(ctx, rect, ptsPx) {
   ctx.rect(mL.x, mL.y, Math.max(0, mR.x - mL.x), mR.y - mL.y);
   ctx.clip();
 
-  const available = chainAvailable();
+  const sizes = chainSizes();
   const segs = [];
+  const lift = (i) => 2 * anim.mid[i]; // middle bone moves twice the visible amount
+  const strip = (i, rec) => {
+    const geo = segmentGeometry(pts[i], pts[i + 1], { w: rec.img.naturalWidth, h: rec.img.naturalHeight }, params);
+    return { geo, img: rec.img, verts: geo.verts.map((v) => toScreen(v.x, v.y + v.w[1] * lift(i))) };
+  };
   for (let i = 0; i < pts.length - 1; i++) {
-    const kind = segmentKind(pts[i], pts[i + 1], params, available);
+    const kind = pickStrip(pts[i], pts[i + 1], params, sizes);
     if (!kind) continue;
-    const imgRec = state.chain.images[kind];
     const lightRec = state.chain.images[kind + 'Light'];
-    const geo = segmentGeometry(pts[i], pts[i + 1], { w: imgRec.img.naturalWidth, h: imgRec.img.naturalHeight }, params);
-    const lift = 2 * anim.mid[i]; // middle bone moves twice the visible amount
-    const verts = geo.verts.map((v) => toScreen(v.x, v.y + v.w[1] * lift));
-    segs.push({ i, geo, verts, imgRec, lightRec });
+    const base = strip(i, state.chain.images[kind]);
+    segs.push({ i, ...base, light: lightRec ? strip(i, lightRec) : null });
   }
-  const drawStrip = (img, s) => {
+  const drawStrip = (s) => {
     const t = s.geo.triangles;
-    const src = (k) => ({ x: s.geo.verts[k].u * img.naturalWidth, y: s.geo.verts[k].v * img.naturalHeight });
+    const src = (k) => ({ x: s.geo.verts[k].u * s.img.naturalWidth, y: s.geo.verts[k].v * s.img.naturalHeight });
     for (let k = 0; k < t.length; k += 3) {
-      drawTriangleImage(ctx, img, src(t[k]), src(t[k + 1]), src(t[k + 2]), s.verts[t[k]], s.verts[t[k + 1]], s.verts[t[k + 2]]);
+      drawTriangleImage(ctx, s.img, src(t[k]), src(t[k + 1]), src(t[k + 2]), s.verts[t[k]], s.verts[t[k + 1]], s.verts[t[k + 2]]);
     }
   };
-  segs.forEach((s) => drawStrip(s.imgRec.img, s));
+  segs.forEach(drawStrip);
   segs.forEach((s) => {
-    if (!s.lightRec || anim.light[s.i] <= 0.001) return;
+    if (!s.light || anim.light[s.i] <= 0.001) return;
     ctx.globalAlpha = anim.light[s.i];
-    drawStrip(s.lightRec.img, s);
+    drawStrip(s.light);
     ctx.globalAlpha = 1;
   });
   ctx.restore();
@@ -1542,7 +1553,7 @@ function drawChainPreview(ctx, rect, ptsPx) {
     pts.forEach((p) => { const q = toScreen(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
     ctx.fillStyle = '#F2B84B';
     segs.forEach((s) => {
-      const q = toScreen(s.geo.ctrl.x, s.geo.ctrl.y + 2 * anim.mid[s.i]);
+      const q = toScreen(s.geo.ctrl.x, s.geo.ctrl.y + lift(s.i));
       ctx.beginPath(); ctx.arc(q.x, q.y, 3, 0, Math.PI * 2); ctx.fill();
     });
   }
@@ -1610,7 +1621,7 @@ document.querySelectorAll('[data-param]').forEach((inp) => {
   inp.addEventListener('input', () => {
     const v = Number(inp.value);
     if (inp.value === '' || !Number.isFinite(v)) return;
-    state.chain.params[inp.dataset.param] = Math.max(0, v);
+    state.chain.params[inp.dataset.param] = /^mesh/.test(inp.dataset.param) ? Math.max(2, Math.round(v)) : Math.max(0, v);
     document.querySelectorAll(`[data-show="${inp.dataset.param}"]`).forEach((sp) => { sp.textContent = inp.value; });
     updateScrubRange();
     drawGrid();
@@ -1846,13 +1857,13 @@ async function exportChain() {
     }
     return found.name;
   };
-  ['h', 'd', 'v'].forEach((kind) => {
+  CHAIN_SLOTS.forEach((kind) => {
     const rec = state.chain.images[kind];
     if (!rec) { images[kind] = null; return; }
     const light = state.chain.images[kind + 'Light'];
     images[kind] = {
       region: regionOf(rec), w: rec.img.naturalWidth, h: rec.img.naturalHeight,
-      light: light ? { region: regionOf(light) } : null
+      light: light ? { region: regionOf(light), w: light.img.naturalWidth, h: light.img.naturalHeight } : null
     };
   });
   const pack = packImages(used.map((u) => ({ name: u.name, img: u.rec.img })), 2, 2048);
@@ -1950,9 +1961,9 @@ async function sampleProject() {
     chain: {
       params: { ...CHAIN_DEFAULTS },
       images: {
-        h: chainImg('chain_ngang'), hLight: chainImg('chain_ngang_light'),
-        d: chainImg('chain_cheo'), dLight: chainImg('chain_cheo_light'),
-        v: chainImg('chain_doc'), vLight: chainImg('chain_doc_light')
+        s1: chainImg('chain_1'), s1Light: chainImg('chain_1_light'),
+        s2: chainImg('chain_2'), s2Light: chainImg('chain_2_light'),
+        s3: chainImg('chain_3'), s3Light: chainImg('chain_3_light')
       }
     },
     background: null

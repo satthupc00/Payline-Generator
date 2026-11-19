@@ -14,8 +14,8 @@
 export const CHAIN_DEFAULTS = {
   sag: 20,            // px the middle of a segment hangs below the straight line (0 = taut)
   overlap: 12,        // px each segment reaches past its end points so links overlap
-  angleFlat: 25,      // |angle| <= this → "ngang" image
-  angleSteep: 65,     // |angle| >= this → "dọc" image, in between → "chéo"
+  meshCols: 9,        // "Số hàng mesh": vertex columns along the strip
+  meshRows: 2,        // "Số cột mesh": vertex rows across the strip
   wobbleAmp: 20,      // px the middle of a segment moves on the first bounce
   wobbleDelay: 0.133, // s between segments starting to bounce
   wobbleDur: 0.6,     // s one segment bounces
@@ -34,26 +34,36 @@ const WOBBLE_V = [0, 1, -0.3806, 0.7415, -0.2068, 0];
 const EASE = [0.25, 0, 0.75, 1];
 const MASK_OPEN_EASE = [0.282, 0, 1, 0.34];
 
-export const CHAIN_KINDS = ['h', 'd', 'v']; // ngang, chéo, dọc
+// Straight strip images in up to 3 lengths ("Ngắn / Vừa / Dài"); each segment
+// uses the one whose length is closest to the segment's, so links stretch least.
+export const CHAIN_SLOTS = ['s1', 's2', 's3'];
 
-// Which image a segment from p0 to p1 uses, falling back to whatever exists.
-export function segmentKind(p0, p1, params, available) {
-  const ang = Math.abs(Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI);
-  const a = ang > 90 ? 180 - ang : ang;
-  const want = a <= params.angleFlat ? 'h' : a >= params.angleSteep ? 'v' : 'd';
-  const order = { h: ['h', 'd', 'v'], d: ['d', 'h', 'v'], v: ['v', 'd', 'h'] }[want];
-  return order.find((k) => available[k]) || null;
+const stripLength = (img) => Math.max(img.w, img.h);
+
+// images: { s1: { w, h } | null, ... } → the slot key to use, or null if none.
+export function pickStrip(p0, p1, params, images) {
+  const need = Math.hypot(p1.x - p0.x, p1.y - p0.y) + 2 * Math.max(0, params.overlap || 0);
+  let best = null, bestCost = Infinity;
+  for (const k of CHAIN_SLOTS) {
+    const img = images[k];
+    if (!img) continue;
+    const cost = Math.abs(Math.log(need / stripLength(img)));
+    if (cost < bestCost) { bestCost = cost; best = k; }
+  }
+  return best;
 }
 
-// Geometry of one segment in its setup pose.
-// p0, p1: end points; img: { w, h } of the strip image (a tall image runs along
-// its height). Returns the middle bone position (Bezier control point) and the
-// strip vertices with their uv and weights for [start, mid, end].
-export function segmentGeometry(p0, p1, img, params, columns = 9) {
+// Geometry of one segment in its setup pose: a grid of vertices along a
+// quadratic Bezier from p0 to p1 that hangs `sag` px in the middle.
+// img: { w, h } of the strip (a tall image runs along its height).
+// Returns the middle bone position (Bezier control point), the vertices (hull
+// first, as Spine wants) with uv and weights for [start, mid, end], triangles.
+export function segmentGeometry(p0, p1, img, params) {
+  const cols = Math.max(2, Math.round(params.meshCols || 2));
+  const rows = Math.max(2, Math.round(params.meshRows || 2));
   const vertical = img.h > img.w;
-  // A tall strip is drawn hanging from its top end: attach that end to the
-  // higher point (y up), else a rising segment shows the art upside down and
-  // its drawn-in sag points up. Weights are flipped back to [p0, mid, p1] below.
+  // A tall strip is treated as hanging from its top end: attach that end to
+  // the higher point (y up). Weights are flipped back to [p0, mid, p1] below.
   const swap = vertical && p0.y < p1.y;
   if (swap) [p0, p1] = [p1, p0];
   const sag = Math.max(0, params.sag || 0);
@@ -74,34 +84,47 @@ export function segmentGeometry(p0, p1, img, params, columns = 9) {
     return { x, y, tx, ty, w: [a, b, c] };
   };
 
-  const top = [], bottom = [];
-  for (let i = 0; i < columns; i++) {
-    const s = i / (columns - 1);
+  // grid[r][c]: r across the strip (0 = "top" edge), c along it
+  const grid = Array.from({ length: rows }, () => []);
+  for (let c = 0; c < cols; c++) {
+    const s = c / (cols - 1);
     const p = at(s);
     let { x, y } = p;
-    // first/last column reach past the point along the strip, fully on that point
-    if (i === 0) { x -= p.tx * over; y -= p.ty * over; }
-    if (i === columns - 1) { x += p.tx * over; y += p.ty * over; }
+    // first/last column reach past the point along the strip ("chồng mép");
+    // the image's ends sit exactly on them, so nothing is cut off
+    if (c === 0) { x -= p.tx * over; y -= p.ty * over; }
+    if (c === cols - 1) { x += p.tx * over; y += p.ty * over; }
     let nx = -p.ty, ny = p.tx; // left of the direction = "up" for a left→right strip
-    // a tall strip's left edge (u = 0, the side its drawn bow leans to) faces down
     if (vertical && ny > 0) { nx = -nx; ny = -ny; }
-    const along = (s * len + over) / (len + 2 * over);
-    const half = thick / 2;
-    const uvTop = vertical ? { u: 0, v: along } : { u: along, v: 0 };
-    const uvBot = vertical ? { u: 1, v: along } : { u: along, v: 1 };
+    const along = c === 0 ? 0 : c === cols - 1 ? 1 : (s * len + over) / (len + 2 * over);
     const w = swap ? [p.w[2], p.w[1], p.w[0]] : p.w;
-    top.push({ x: x + nx * half, y: y + ny * half, ...uvTop, w });
-    bottom.push({ x: x - nx * half, y: y - ny * half, ...uvBot, w });
+    for (let r = 0; r < rows; r++) {
+      const q = r / (rows - 1);
+      const off = thick / 2 - q * thick;
+      const uv = vertical ? { u: q, v: along } : { u: along, v: q };
+      grid[r][c] = { x: x + nx * off, y: y + ny * off, ...uv, w };
+    }
   }
-  // hull order: top row left→right, bottom row right→left
-  const verts = [...top, ...bottom.reverse()];
-  const n = columns;
+
+  // hull: top row →, right column ↓, bottom row ←, left column ↑; then interior
+  const order = [];
+  for (let c = 0; c < cols; c++) order.push([0, c]);
+  for (let r = 1; r < rows; r++) order.push([r, cols - 1]);
+  for (let c = cols - 2; c >= 0; c--) order.push([rows - 1, c]);
+  for (let r = rows - 2; r >= 1; r--) order.push([r, 0]);
+  const hull = order.length;
+  for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) order.push([r, c]);
+  const index = new Map(order.map(([r, c], i) => [`${r},${c}`, i]));
+  const verts = order.map(([r, c]) => grid[r][c]);
   const tri = [];
-  for (let i = 0; i < n - 1; i++) {
-    const t0 = i, t1 = i + 1, b0 = 2 * n - 1 - i, b1 = 2 * n - 2 - i;
-    tri.push(t0, t1, b1, t0, b1, b0);
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = index.get(`${r},${c}`), b = index.get(`${r},${c + 1}`);
+      const d = index.get(`${r + 1},${c + 1}`), e = index.get(`${r + 1},${c}`);
+      tri.push(a, b, d, a, d, e);
+    }
   }
-  return { ctrl, verts, triangles: tri, hull: verts.length };
+  return { ctrl, verts, triangles: tri, hull };
 }
 
 // ---- timing ----
@@ -177,7 +200,7 @@ const r4 = (n) => Math.round(n * 10000) / 10000;
 const r5 = (n) => Math.round(n * 100000) / 100000;
 
 // patterns: [{ name, points: [{x,y}] in grid px (y down) }]
-// images: { h, d, v } each { region, w, h, light: { region } | null } or null
+// images: { s1, s2, s3 } each { region, w, h, light: { region, w, h } | null } or null
 // gridCenter / gridSize: grid px; the mask covers the grid plus a margin.
 export function buildChainSpineJson({ skeletonName, patterns, images, params, gridCenter, gridSize, margin = 60 }) {
   const toSpine = (p) => ({ x: p.x - gridCenter.x, y: -(p.y - gridCenter.y) });
@@ -187,7 +210,6 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
   const skin = {};
   const animations = {};
   const boneIndex = (name) => bones.findIndex((b) => b.name === name);
-  const available = { h: !!images.h, d: !!images.d, v: !!images.v };
 
   const halfW = gridSize.w / 2 + margin, halfH = gridSize.h / 2 + margin;
   const maskVerts = [-halfW, halfH, -halfW, -halfH, halfW, -halfH, halfW, halfH]; // TL, BL, BR, TR
@@ -202,7 +224,7 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
     const anim = { slots: {}, bones: {}, deform: { default: {} } };
     const segCount = pts.length - 1;
     for (let i = 0; i < segCount; i++) {
-      const kind = segmentKind(pts[i], pts[i + 1], params, available);
+      const kind = pickStrip(pts[i], pts[i + 1], params, images);
       if (!kind) continue;
       const img = images[kind];
       const geo = segmentGeometry(pts[i], pts[i + 1], img, params);
@@ -211,7 +233,7 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
       const segBones = [`node${i + 1}_${id}`, midName, `node${i + 2}_${id}`];
       const bonePos = [pts[i], geo.ctrl, pts[i + 1]];
 
-      const encode = () => {
+      const encode = (geo) => {
         const out = [];
         geo.verts.forEach((v) => {
           const used = v.w.map((w, k) => ({ w, k })).filter((o) => o.w > 1e-6);
@@ -222,25 +244,27 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
         });
         return out;
       };
-      const mesh = (region, w, h) => {
+      // the light has its own thickness, so its own geometry on the same bones
+      const mesh = (geo, region, w, h) => {
         const edges = [];
         for (let e = 0; e < geo.hull; e++) edges.push(e * 2, ((e + 1) % geo.hull) * 2);
         return {
           type: 'mesh', path: region,
           uvs: geo.verts.flatMap((v) => [r4(v.u), r4(v.v)]),
-          triangles: geo.triangles, vertices: encode(), hull: geo.hull, edges, width: w, height: h
+          triangles: geo.triangles, vertices: encode(geo), hull: geo.hull, edges, width: w, height: h
         };
       };
 
       const segSlot = `seg${i + 1}_${id}`;
       slots.push({ name: segSlot, bone: `pl_${id}` });
-      skin[segSlot] = { [img.region]: mesh(img.region, img.w, img.h) };
+      skin[segSlot] = { [img.region]: mesh(geo, img.region, img.w, img.h) };
       anim.slots[segSlot] = { attachment: [{ time: 0, name: img.region }] };
 
       if (img.light) {
         const lSlot = `light${i + 1}_${id}`;
         lightSlots.push({ name: lSlot, bone: `pl_${id}` });
-        skin[lSlot] = { [img.light.region]: mesh(img.light.region, img.w, img.h) };
+        const lgeo = segmentGeometry(pts[i], pts[i + 1], img.light, params);
+        skin[lSlot] = { [img.light.region]: mesh(lgeo, img.light.region, img.light.w, img.light.h) };
         const lk = lightKeys(i, params);
         anim.slots[lSlot] = {
           attachment: [{ time: 0, name: img.light.region }],

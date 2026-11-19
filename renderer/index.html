@@ -147,11 +147,11 @@
         <div class="sec">
           <h3>Ảnh dây</h3>
           <div class="chain-imgs">
-            <span class="ck">Ngang</span><button class="btn sm cimg" data-slot="h">Chọn ảnh</button><button class="btn sm cimg light" data-slot="hLight">Ảnh sáng</button>
-            <span class="ck">Chéo</span><button class="btn sm cimg" data-slot="d">Chọn ảnh</button><button class="btn sm cimg light" data-slot="dLight">Ảnh sáng</button>
-            <span class="ck">Dọc</span><button class="btn sm cimg" data-slot="v">Chọn ảnh</button><button class="btn sm cimg light" data-slot="vLight">Ảnh sáng</button>
+            <span class="ck">Ngắn</span><button class="btn sm cimg" data-slot="s1">Chọn ảnh</button><button class="btn sm cimg light" data-slot="s1Light">Ảnh sáng</button>
+            <span class="ck">Vừa</span><button class="btn sm cimg" data-slot="s2">Chọn ảnh</button><button class="btn sm cimg light" data-slot="s2Light">Ảnh sáng</button>
+            <span class="ck">Dài</span><button class="btn sm cimg" data-slot="s3">Chọn ảnh</button><button class="btn sm cimg light" data-slot="s3Light">Ảnh sáng</button>
           </div>
-          <div class="hint">Mỗi đoạn tự chọn ảnh theo góc: ngang ≤ 25°, dọc ≥ 65°, còn lại là chéo. Chuột phải vào ô ảnh để bỏ ảnh.</div>
+          <div class="hint">Ảnh dây thẳng. Mỗi đoạn tự dùng ảnh có chiều dài gần với đoạn nhất (mắt xích ít bị giãn nhất). Chuột phải vào ô ảnh để bỏ ảnh.</div>
         </div>
         <div class="sec">
           <h3>Hình dây</h3>
@@ -159,6 +159,10 @@
           <input type="range" data-param="sag" min="0" max="120" step="1" value="20" />
           <label class="fl">Chồng mép <b><span data-show="overlap">12</span>px</b></label>
           <input type="range" data-param="overlap" min="0" max="60" step="1" value="12" />
+          <label class="fl">Số hàng mesh <b data-show="meshCols">9</b></label>
+          <input type="range" data-param="meshCols" min="2" max="60" step="1" value="9" />
+          <label class="fl">Số cột mesh <b data-show="meshRows">2</b></label>
+          <input type="range" data-param="meshRows" min="2" max="10" step="1" value="2" />
         </div>
         <div class="sec">
           <h3>Rung</h3>
