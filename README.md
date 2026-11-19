@@ -39,7 +39,11 @@ Tab ở cột phải chọn kiểu đang xem / chỉnh (cả 2 kiểu dùng chun
   dây rung lần lượt từng đoạn, lớp sáng tắt dần, rồi mask ẩn về bên phải. Mọi thông số (độ võng,
   chồng mép, biên độ / độ trễ / thời gian rung, ánh sáng, mask) chỉnh ở cột phải.
   - Ảnh dây gồm 3 loại theo góc của đoạn: **Ngang** (≤ 25°), **Chéo**, **Dọc** (≥ 65°), mỗi loại có thể
-    kèm 1 **ảnh sáng**. Thiếu loại nào thì đoạn đó dùng loại gần nhất đang có. Ảnh dọc là ảnh dựng đứng.
+    kèm 1 **ảnh sáng**. Thiếu loại nào thì đoạn đó dùng loại gần nhất đang có. Ảnh dọc là ảnh dựng đứng,
+    vẽ treo từ đầu trên: app luôn gắn đầu trên vào điểm cao hơn và quay phía võng xuống dưới.
+  - Ô số: giữ chuột và kéo qua lại để đổi giá trị (bấm 1 lần để gõ số).
+
+Lưới: lăn chuột để zoom, giữ chuột giữa để kéo, phím **F** để về khung ban đầu.
 
 **Export…** hỏi xuất kiểu nào (chọn được cả 2): kiểu fbf ra `<Tên skeleton>.json/.atlas/.png`,
 kiểu dây ra `<Tên skeleton>_Chain.json/.atlas/.png`.

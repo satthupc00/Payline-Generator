@@ -50,10 +50,15 @@ export function segmentKind(p0, p1, params, available) {
 // its height). Returns the middle bone position (Bezier control point) and the
 // strip vertices with their uv and weights for [start, mid, end].
 export function segmentGeometry(p0, p1, img, params, columns = 9) {
+  const vertical = img.h > img.w;
+  // A tall strip is drawn hanging from its top end: attach that end to the
+  // higher point (y up), else a rising segment shows the art upside down and
+  // its drawn-in sag points up. Weights are flipped back to [p0, mid, p1] below.
+  const swap = vertical && p0.y < p1.y;
+  if (swap) [p0, p1] = [p1, p0];
   const sag = Math.max(0, params.sag || 0);
   const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
   const ctrl = { x: mx, y: my - 2 * sag }; // B(0.5) ends up `sag` below the chord
-  const vertical = img.h > img.w;
   const thick = vertical ? img.w : img.h;
   const len = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
   const over = Math.max(0, params.overlap || 0);
@@ -77,13 +82,16 @@ export function segmentGeometry(p0, p1, img, params, columns = 9) {
     // first/last column reach past the point along the strip, fully on that point
     if (i === 0) { x -= p.tx * over; y -= p.ty * over; }
     if (i === columns - 1) { x += p.tx * over; y += p.ty * over; }
-    const nx = -p.ty, ny = p.tx; // left of the direction = "up" for a left→right strip
+    let nx = -p.ty, ny = p.tx; // left of the direction = "up" for a left→right strip
+    // a tall strip's left edge (u = 0, the side its drawn bow leans to) faces down
+    if (vertical && ny > 0) { nx = -nx; ny = -ny; }
     const along = (s * len + over) / (len + 2 * over);
     const half = thick / 2;
     const uvTop = vertical ? { u: 0, v: along } : { u: along, v: 0 };
     const uvBot = vertical ? { u: 1, v: along } : { u: along, v: 1 };
-    top.push({ x: x + nx * half, y: y + ny * half, ...uvTop, w: p.w });
-    bottom.push({ x: x - nx * half, y: y - ny * half, ...uvBot, w: p.w });
+    const w = swap ? [p.w[2], p.w[1], p.w[0]] : p.w;
+    top.push({ x: x + nx * half, y: y + ny * half, ...uvTop, w });
+    bottom.push({ x: x - nx * half, y: y - ny * half, ...uvBot, w });
   }
   // hull order: top row left→right, bottom row right→left
   const verts = [...top, ...bottom.reverse()];

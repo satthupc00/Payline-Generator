@@ -196,11 +196,11 @@ function drawGrid() {
   ctx.clearRect(0, 0, rect.width, rect.height);
 
   const layout = buildGridLayout(state.gridConfig);
-  const offX = (rect.width - layout.totalW) / 2;
-  const offY = (rect.height - layout.totalH) / 2;
+  const { offX, offY, zoom } = gridSpaceOffset(rect);
 
   ctx.save();
   ctx.translate(offX, offY);
+  ctx.scale(zoom, zoom);
 
   // background reference image
   if (state.bgImage && state.bgVisible) {
@@ -410,11 +410,8 @@ function updateWarningBox(pattern) {
 }
 
 function gridClickToCell(mx, my) {
-  const rect = gridCanvas.getBoundingClientRect();
   const layout = buildGridLayout(state.gridConfig);
-  const offX = (rect.width - layout.totalW) / 2;
-  const offY = (rect.height - layout.totalH) / 2;
-  const x = mx - offX, y = my - offY;
+  const { x, y } = toGrid(mx, my);
 
   let bestReel = -1, bestRow = -1, bestDist = Infinity;
   layout.columns.forEach((col, r) => {
@@ -478,23 +475,74 @@ function toggleSelectedReel(pattern, i) {
   if (idx >= 0) sel.splice(idx, 1); else sel.push(i);
 }
 
-function gridSpaceOffset() {
-  const rect = gridCanvas.getBoundingClientRect();
+// Grid view: mouse wheel zooms around the cursor, middle-drag pans, F resets.
+const gridView = { zoom: 1, panX: 0, panY: 0 };
+
+// Screen offset of grid-space (0,0) and the zoom; screen = off + grid * zoom.
+function gridSpaceOffset(rect = gridCanvas.getBoundingClientRect()) {
   const layout = buildGridLayout(state.gridConfig);
-  return { offX: (rect.width - layout.totalW) / 2, offY: (rect.height - layout.totalH) / 2, rect };
+  const z = gridView.zoom;
+  return {
+    offX: (rect.width - layout.totalW * z) / 2 + gridView.panX,
+    offY: (rect.height - layout.totalH * z) / 2 + gridView.panY,
+    zoom: z,
+    rect
+  };
 }
+
+// Canvas pixel (relative to the canvas) -> grid space.
+function toGrid(mx, my) {
+  const { offX, offY, zoom } = gridSpaceOffset();
+  return { x: (mx - offX) / zoom, y: (my - offY) / zoom };
+}
+
+gridCanvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = gridCanvas.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const g = toGrid(mx, my);
+  const z = Math.max(0.2, Math.min(8, gridView.zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
+  const layout = buildGridLayout(state.gridConfig);
+  // keep the grid point under the cursor where it is
+  gridView.panX = mx - g.x * z - (r.width - layout.totalW * z) / 2;
+  gridView.panY = my - g.y * z - (r.height - layout.totalH * z) / 2;
+  gridView.zoom = z;
+  drawGrid();
+}, { passive: false });
+
+function resetGridView() {
+  gridView.zoom = 1; gridView.panX = 0; gridView.panY = 0;
+  drawGrid();
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'f' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) return;
+  resetGridView();
+});
 
 gridCanvas.addEventListener('mousedown', (e) => {
   const rectBounds = gridCanvas.getBoundingClientRect();
   const mx = e.clientX - rectBounds.left, my = e.clientY - rectBounds.top;
+
+  // middle button: pan the view
+  if (e.button === 1) {
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, px = gridView.panX, py = gridView.panY;
+    const onMove = (ev) => { gridView.panX = px + ev.clientX - sx; gridView.panY = py + ev.clientY - sy; drawGrid(); };
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return;
+  }
+  if (e.button !== 0) return;
 
   if (state.bgEditing && state.bgImage) {
     const bg = state.bgImage;
     const startX = e.clientX, startY = e.clientY;
     const origX = bg.x, origY = bg.y;
     const onMove = (ev) => {
-      bg.x = origX + (ev.clientX - startX);
-      bg.y = origY + (ev.clientY - startY);
+      bg.x = origX + (ev.clientX - startX) / gridView.zoom;
+      bg.y = origY + (ev.clientY - startY) / gridView.zoom;
       drawGrid();
     };
     const onUp = () => {
@@ -506,8 +554,8 @@ gridCanvas.addEventListener('mousedown', (e) => {
     return;
   }
 
-  const { offX, offY } = gridSpaceOffset();
-  const gx = mx - offX, gy = my - offY;
+  const { offX, offY, zoom } = gridSpaceOffset();
+  const gx = (mx - offX) / zoom, gy = (my - offY) / zoom;
 
   // 1) tangent-handle drag (only for currently-selected points) takes
   // priority over everything else below
@@ -528,8 +576,8 @@ gridCanvas.addEventListener('mousedown', (e) => {
       // handle always looks like one coherent line through its point.
       const onMove = (ev) => {
         const r2 = gridCanvas.getBoundingClientRect();
-        const mgx = ev.clientX - r2.left - offX;
-        const mgy = ev.clientY - r2.top - offY;
+        const mgx = (ev.clientX - r2.left - offX) / zoom;
+        const mgy = (ev.clientY - r2.top - offY) / zoom;
         let vx = mgx - anchor.x, vy = mgy - anchor.y;
         if (end === 'bwd') { vx = -vx; vy = -vy; }
         const angle = Math.atan2(vy, vx);
@@ -570,8 +618,8 @@ gridCanvas.addEventListener('mousedown', (e) => {
 
       const onMove = (ev) => {
         const r2 = gridCanvas.getBoundingClientRect();
-        const curGX = ev.clientX - r2.left - offX;
-        const curGY = ev.clientY - r2.top - offY;
+        const curGX = (ev.clientX - r2.left - offX) / zoom;
+        const curGY = (ev.clientY - r2.top - offY) / zoom;
         const dx = curGX - gx, dy = curGY - gy;
         const alongDelta = dx * alongX + dy * alongY;
         const perpDelta = dx * perpX + dy * perpY;
@@ -621,7 +669,7 @@ gridCanvas.addEventListener('mousedown', (e) => {
     if (!dragging && Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD) dragging = true;
     if (!dragging) return;
     const r2 = gridCanvas.getBoundingClientRect();
-    const curX = ev.clientX - r2.left - offX, curY = ev.clientY - r2.top - offY;
+    const curX = (ev.clientX - r2.left - offX) / zoom, curY = (ev.clientY - r2.top - offY) / zoom;
     dragSelectRect = {
       x0: Math.min(gx, curX), y0: Math.min(gy, curY),
       x1: Math.max(gx, curX), y1: Math.max(gy, curY)
@@ -671,8 +719,8 @@ gridCanvas.addEventListener('mousedown', (e) => {
 gridCanvas.addEventListener('dblclick', (e) => {
   const rectBounds = gridCanvas.getBoundingClientRect();
   const mx = e.clientX - rectBounds.left, my = e.clientY - rectBounds.top;
-  const { offX, offY } = gridSpaceOffset();
-  const handleHit = hitTestTangentHandle(mx - offX, my - offY);
+  const g = toGrid(mx, my);
+  const handleHit = hitTestTangentHandle(g.x, g.y);
   if (handleHit) {
     const pattern = activePattern();
     // Double-click a handle: drop the manual override entirely and go
@@ -683,6 +731,7 @@ gridCanvas.addEventListener('dblclick', (e) => {
 });
 
 window.addEventListener('resize', () => { drawGrid(); drawPreview(); });
+gridCanvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
 
 // ==================================================================
 // Preview panel resize (drag handle)
@@ -1568,6 +1617,38 @@ document.querySelectorAll('[data-param]').forEach((inp) => {
     drawPreview();
   });
 });
+// Number boxes: hold the mouse and slide left/right to change the value
+// (a plain click still lets you type). Each pixel moves one tenth of a step.
+document.querySelectorAll('.pgrid input[type="number"]').forEach((inp) => {
+  inp.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || document.activeElement === inp) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const start = Number(inp.value) || 0;
+    const step = Number(inp.step) || 1;
+    const min = inp.min === '' ? -Infinity : Number(inp.min);
+    const decimals = (String(inp.step).split('.')[1] || '').length;
+    let moved = false;
+    inp.classList.add('scrubbing');
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) < 3) return;
+      moved = true;
+      const v = Math.max(min, start + Math.round(dx / 4) * step);
+      inp.value = v.toFixed(decimals);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      inp.classList.remove('scrubbing');
+      if (!moved) { inp.focus(); inp.select(); }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+});
+
 el('btnChainDefaults').addEventListener('click', () => {
   state.chain.params = { ...CHAIN_DEFAULTS };
   syncChainParamInputs();

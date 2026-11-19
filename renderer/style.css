@@ -421,7 +421,10 @@ input.lock-input:focus { outline: none; border-color: var(--red); box-shadow: 0 
 .chain-imgs .cimg.set { color: var(--ok); border-color: rgba(63,191,127,.45); }
 .chain-imgs .cimg.light:not(.set) { color: var(--muted); }
 .pgrid { display: grid; grid-template-columns: 1fr 78px; gap: 6px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
-.pgrid .in { height: 26px; text-align: right; }
+.pgrid .in { height: 26px; text-align: right; cursor: ew-resize; font-variant-numeric: tabular-nums; }
+.pgrid .in:focus { cursor: text; }
+.pgrid .in.scrubbing { border-color: var(--red); background: var(--selected-bg); }
+.pgrid .in::-webkit-inner-spin-button, .pgrid .in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .exp-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
 .exp-opt:hover { border-color: #4A4F58; background: var(--hover); }
 .exp-opt input { margin-top: 2px; }
