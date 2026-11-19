@@ -2,10 +2,13 @@
 // neighbouring reel points, hanging with an adjustable sag, plus a light
 // overlay per segment and one clipping mask over the whole line. Rebuilt from
 // the hand-made reference rig (9687_VFX_Payline):
-//   - each segment mesh is weighted to 3 bones: start point, end point and a
-//     middle bone pulled down to make the sag (quadratic Bezier weights);
-//   - "rung": the middle bone bounces with a decaying wave, each segment a
-//     little later than the previous one (a ripple running left to right);
+//   - each segment mesh hangs along a quadratic curve (the sag is its setup
+//     shape) and is weighted to a chain of bones along it: start point,
+//     3–6 bones inside, end point (each vertex between its two nearest bones);
+//   - "rung": the inside bones move a little perpendicular to the segment with
+//     a decaying wave, most in the middle, none at the ends, each one slightly
+//     later than the one before (a ripple running left to right). Moving
+//     across the strip, never along it, keeps the links from stretching;
 //   - "ánh sáng": the light overlay of each segment fades out in turn;
 //   - "mask": a clipping quad opens from left to right, holds, then closes
 //     towards the right.
@@ -16,8 +19,9 @@ export const CHAIN_DEFAULTS = {
   overlap: 12,        // px each segment reaches past its end points so links overlap
   meshCols: 9,        // "Số hàng mesh": vertex columns along the strip
   meshRows: 2,        // "Số cột mesh": vertex rows across the strip
+  chainBones: 4,      // bones inside each segment that make it wobble (3–6)
   wobbleAmp: 20,      // px the middle of a segment moves on the first bounce
-  wobbleDelay: 0.133, // s between segments starting to bounce
+  wobbleDelay: 0.133, // s the ripple takes to travel one segment
   wobbleDur: 0.6,     // s one segment bounces
   lightStart: 0.4,    // s when the first light starts to fade out
   lightDelay: 0.033,  // s between segments' lights
@@ -54,23 +58,28 @@ export function pickStrip(p0, p1, params, images) {
 }
 
 // Geometry of one segment in its setup pose: a grid of vertices along a
-// quadratic Bezier from p0 to p1 that hangs `sag` px in the middle.
+// quadratic curve from p0 to p1 that hangs `sag` px in the middle, weighted to
+// a chain of bones on that curve (p0, the inside bones, p1).
 // img: { w, h } of the strip (a tall image runs along its height).
-// Returns the middle bone position (Bezier control point), the vertices (hull
-// first, as Spine wants) with uv and weights for [start, mid, end], triangles.
+// Returns { bones: [{ x, y, s }] (s = 0..1 from p0), normal (unit, across the
+// segment), verts (hull first, as Spine wants) with uv and weights
+// [{ k: bone index, w }], triangles, hull }.
 export function segmentGeometry(p0, p1, img, params) {
   const cols = Math.max(2, Math.round(params.meshCols || 2));
   const rows = Math.max(2, Math.round(params.meshRows || 2));
+  const inner = Math.max(1, Math.min(8, Math.round(params.chainBones || 4)));
+  const len0 = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+  // wobble direction: across the chord (left of p0 → p1, "up" for a left→right segment)
+  const normal = { x: -(p1.y - p0.y) / len0, y: (p1.x - p0.x) / len0 };
   const vertical = img.h > img.w;
   // A tall strip is treated as hanging from its top end: attach that end to
-  // the higher point (y up). Weights are flipped back to [p0, mid, p1] below.
+  // the higher point (y up). Bones and weights are flipped back to p0→p1 below.
   const swap = vertical && p0.y < p1.y;
   if (swap) [p0, p1] = [p1, p0];
   const sag = Math.max(0, params.sag || 0);
   const mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
   const ctrl = { x: mx, y: my - 2 * sag }; // B(0.5) ends up `sag` below the chord
   const thick = vertical ? img.w : img.h;
-  const len = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
   const over = Math.max(0, params.overlap || 0);
 
   const at = (s) => {
@@ -81,23 +90,51 @@ export function segmentGeometry(p0, p1, img, params) {
     let ty = 2 * (1 - s) * (ctrl.y - p0.y) + 2 * s * (p1.y - ctrl.y);
     const tl = Math.hypot(tx, ty) || 1;
     tx /= tl; ty /= tl;
-    return { x, y, tx, ty, w: [a, b, c] };
+    return { x, y, tx, ty };
+  };
+
+  // Even spacing by real length along the curve: on a steep hanging segment the
+  // curve's own parameter bunches up at one end, which stretched the links.
+  const STEPS = 64;
+  const cum = [0];
+  let prev = at(0);
+  for (let i = 1; i <= STEPS; i++) {
+    const p = at(i / STEPS);
+    cum.push(cum[i - 1] + Math.hypot(p.x - prev.x, p.y - prev.y));
+    prev = p;
+  }
+  const arcLen = cum[STEPS] || 1;
+  const paramAt = (f) => { // fraction of the length -> curve parameter
+    const target = f * arcLen;
+    let i = 1;
+    while (i < STEPS && cum[i] < target) i++;
+    const seg = cum[i] - cum[i - 1] || 1;
+    return (i - 1 + (target - cum[i - 1]) / seg) / STEPS;
+  };
+
+  // bones along the curve (evenly by length), ends included; s = length fraction
+  const boneS = Array.from({ length: inner + 2 }, (_, k) => k / (inner + 1));
+  const weightsAt = (s) => {
+    let j = 0;
+    while (j < boneS.length - 2 && s > boneS[j + 1]) j++;
+    const f = Math.max(0, Math.min(1, (s - boneS[j]) / (boneS[j + 1] - boneS[j])));
+    return [{ k: j, w: 1 - f }, { k: j + 1, w: f }].filter((o) => o.w > 1e-6);
   };
 
   // grid[r][c]: r across the strip (0 = "top" edge), c along it
   const grid = Array.from({ length: rows }, () => []);
   for (let c = 0; c < cols; c++) {
-    const s = c / (cols - 1);
-    const p = at(s);
+    const s = c / (cols - 1); // fraction of the length
+    const p = at(paramAt(s));
     let { x, y } = p;
     // first/last column reach past the point along the strip ("chồng mép");
     // the image's ends sit exactly on them, so nothing is cut off
     if (c === 0) { x -= p.tx * over; y -= p.ty * over; }
     if (c === cols - 1) { x += p.tx * over; y += p.ty * over; }
-    let nx = -p.ty, ny = p.tx; // left of the direction = "up" for a left→right strip
+    let nx = -p.ty, ny = p.tx;
     if (vertical && ny > 0) { nx = -nx; ny = -ny; }
-    const along = c === 0 ? 0 : c === cols - 1 ? 1 : (s * len + over) / (len + 2 * over);
-    const w = swap ? [p.w[2], p.w[1], p.w[0]] : p.w;
+    const along = c === 0 ? 0 : c === cols - 1 ? 1 : (s * arcLen + over) / (arcLen + 2 * over);
+    const w = weightsAt(s);
     for (let r = 0; r < rows; r++) {
       const q = r / (rows - 1);
       const off = thick / 2 - q * thick;
@@ -115,7 +152,7 @@ export function segmentGeometry(p0, p1, img, params) {
   const hull = order.length;
   for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) order.push([r, c]);
   const index = new Map(order.map(([r, c], i) => [`${r},${c}`, i]));
-  const verts = order.map(([r, c]) => grid[r][c]);
+  let verts = order.map(([r, c]) => grid[r][c]);
   const tri = [];
   for (let r = 0; r < rows - 1; r++) {
     for (let c = 0; c < cols - 1; c++) {
@@ -124,13 +161,19 @@ export function segmentGeometry(p0, p1, img, params) {
       tri.push(a, b, d, a, d, e);
     }
   }
-  return { ctrl, verts, triangles: tri, hull };
+  let bones = boneS.map((s) => { const p = at(paramAt(s)); return { x: p.x, y: p.y, s }; });
+  if (swap) {
+    const last = bones.length - 1;
+    bones = bones.reverse().map((b) => ({ ...b, s: 1 - b.s }));
+    verts = verts.map((v) => ({ ...v, w: v.w.map((o) => ({ k: last - o.k, w: o.w })) }));
+  }
+  return { bones, normal, verts, triangles: tri, hull };
 }
 
 // ---- timing ----
 
 export function chainDuration(segCount, params) {
-  const wobbleEnd = (segCount - 1) * params.wobbleDelay + params.wobbleDur;
+  const wobbleEnd = segCount * params.wobbleDelay + params.wobbleDur;
   const lightEnd = params.lightStart + (segCount - 1) * params.lightDelay + params.lightFade;
   const maskEnd = params.maskHold + params.maskOut;
   return Math.max(wobbleEnd, lightEnd, maskEnd, params.maskIn);
@@ -162,10 +205,19 @@ function sampleKeys(keys, t) {
   return keys[keys.length - 1].v;
 }
 
-// Keys of the middle bone's displacement (visible px) for segment i.
-function wobbleKeys(i, params) {
-  const start = i * params.wobbleDelay;
-  return WOBBLE_T.map((ft, k) => ({ t: start + ft * params.wobbleDur, v: WOBBLE_V[k] * params.wobbleAmp, curve: EASE }));
+// Keys of an inside bone's displacement across segment i (px), for the bone at
+// s (0..1 along the segment): strongest mid-segment, starting a bit later the
+// further along the line it is.
+function wobbleKeys(i, s, params) {
+  const start = (i + s) * params.wobbleDelay;
+  const amp = params.wobbleAmp * Math.sin(Math.PI * s);
+  return WOBBLE_T.map((ft, k) => ({ t: start + ft * params.wobbleDur, v: WOBBLE_V[k] * amp, curve: EASE }));
+}
+
+// Displacement (px, across the segment) of the bone at s of segment i at time t.
+export function wobbleAt(i, s, params, t) {
+  if (s <= 0 || s >= 1) return 0;
+  return sampleKeys(wobbleKeys(i, s, params), t);
 }
 
 function lightKeys(i, params) {
@@ -185,8 +237,6 @@ function maskKeys(params) {
 export function chainStateAt(segCount, params, t) {
   const m = maskKeys(params);
   return {
-    // the middle bone moves twice the visible amount (its weight there is 0.5)
-    mid: Array.from({ length: segCount }, (_, i) => sampleKeys(wobbleKeys(i, params), t)),
     light: Array.from({ length: segCount }, (_, i) => sampleKeys(lightKeys(i, params), t)),
     maskLeft: sampleKeys(m.left, t),
     maskRight: sampleKeys(m.right, t)
@@ -228,17 +278,22 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
       if (!kind) continue;
       const img = images[kind];
       const geo = segmentGeometry(pts[i], pts[i + 1], img, params);
-      const midName = `mid${i + 1}_${id}`;
-      bones.push({ name: midName, parent: `pl_${id}`, x: r2(geo.ctrl.x), y: r2(geo.ctrl.y) });
-      const segBones = [`node${i + 1}_${id}`, midName, `node${i + 2}_${id}`];
-      const bonePos = [pts[i], geo.ctrl, pts[i + 1]];
+      // bone chain along the segment: its two end points + the inside bones
+      const last = geo.bones.length - 1;
+      const segBones = geo.bones.map((b, k) => {
+        if (k === 0) return `node${i + 1}_${id}`;
+        if (k === last) return `node${i + 2}_${id}`;
+        const name = `b${k}_s${i + 1}_${id}`;
+        bones.push({ name, parent: `pl_${id}`, x: r2(b.x), y: r2(b.y) });
+        return name;
+      });
+      const bonePos = geo.bones;
 
       const encode = (geo) => {
         const out = [];
         geo.verts.forEach((v) => {
-          const used = v.w.map((w, k) => ({ w, k })).filter((o) => o.w > 1e-6);
-          out.push(used.length);
-          used.forEach(({ w, k }) => {
+          out.push(v.w.length);
+          v.w.forEach(({ k, w }) => {
             out.push(boneIndex(segBones[k]), r2(v.x - bonePos[k].x), r2(v.y - bonePos[k].y), r5(w));
           });
         });
@@ -275,12 +330,16 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
         };
       }
 
-      // middle bone bounce: twice the visible amount (its weight mid-strip is 0.5)
-      anim.bones[midName] = {
-        translate: wobbleKeys(i, params).map((k, j, arr) => ({
-          time: r4(k.t), x: 0, y: r2(2 * k.v), ...(j < arr.length - 1 ? { curve: EASE } : {})
-        }))
-      };
+      // inside bones bounce across the segment
+      geo.bones.forEach((b, k) => {
+        if (k === 0 || k === last) return;
+        anim.bones[segBones[k]] = {
+          translate: wobbleKeys(i, b.s, params).map((key, j, arr) => ({
+            time: r4(key.t), x: r2(geo.normal.x * key.v), y: r2(geo.normal.y * key.v),
+            ...(j < arr.length - 1 ? { curve: EASE } : {})
+          }))
+        };
+      });
     }
 
     // mask: right edge opens from the left, later the left edge closes to the right

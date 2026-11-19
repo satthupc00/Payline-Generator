@@ -2,7 +2,7 @@ import { buildGridLayout } from './modules/grid.js';
 import { buildCurve, buildRigSamples, computeTangents, getHandleVectors, computeAutoTangents } from './modules/spline.js';
 import { buildRibbonMesh, skinVertices } from './modules/mesh.js';
 import { packFrames, packImages, buildAtlasText, pageFileName } from './modules/atlasPacker.js';
-import { CHAIN_DEFAULTS, CHAIN_SLOTS, pickStrip, segmentGeometry, chainDuration, chainStateAt, buildChainSpineJson } from './modules/chain.js';
+import { CHAIN_DEFAULTS, CHAIN_SLOTS, pickStrip, segmentGeometry, chainDuration, chainStateAt, wobbleAt, buildChainSpineJson } from './modules/chain.js';
 import { buildSpineJson } from './modules/spineExport.js';
 
 // ---------------- state ----------------
@@ -1311,6 +1311,16 @@ el('btnNewProject').addEventListener('click', async () => {
   markSaved();
 });
 
+// Space anywhere plays / pauses the preview, except while typing in a text or number box.
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  const a = document.activeElement;
+  if (a && (a.isContentEditable || (a.tagName === 'INPUT' && /^(text|number|search|password)$/.test(a.type)) || a.tagName === 'TEXTAREA')) return;
+  if (document.querySelector('#lock-overlay:not([hidden]), #admin-modal:not([hidden])')) return;
+  e.preventDefault(); // don't also "click" a focused button or scroll
+  el('btnPlayPause').click();
+}, true);
+
 // Ctrl+S = save (Ctrl+Shift+S = save as), Ctrl+O = load, Ctrl+N = new file
 window.addEventListener('keydown', (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;
@@ -1507,10 +1517,16 @@ function drawChainPreview(ctx, rect, ptsPx) {
 
   const sizes = chainSizes();
   const segs = [];
-  const lift = (i) => 2 * anim.mid[i]; // middle bone moves twice the visible amount
+  const tNow = frame / CHAIN_FPS;
   const strip = (i, rec) => {
     const geo = segmentGeometry(pts[i], pts[i + 1], { w: rec.img.naturalWidth, h: rec.img.naturalHeight }, params);
-    return { geo, img: rec.img, verts: geo.verts.map((v) => toScreen(v.x, v.y + v.w[1] * lift(i))) };
+    // each bone moves across the segment; a vertex follows its two bones' blend
+    const disp = geo.bones.map((b) => wobbleAt(i, b.s, params, tNow));
+    const verts = geo.verts.map((v) => {
+      const d = v.w.reduce((sum, o) => sum + o.w * disp[o.k], 0);
+      return toScreen(v.x + geo.normal.x * d, v.y + geo.normal.y * d);
+    });
+    return { geo, img: rec.img, verts, disp };
   };
   for (let i = 0; i < pts.length - 1; i++) {
     const kind = pickStrip(pts[i], pts[i + 1], params, sizes);
@@ -1553,8 +1569,11 @@ function drawChainPreview(ctx, rect, ptsPx) {
     pts.forEach((p) => { const q = toScreen(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
     ctx.fillStyle = '#F2B84B';
     segs.forEach((s) => {
-      const q = toScreen(s.geo.ctrl.x, s.geo.ctrl.y + lift(s.i));
-      ctx.beginPath(); ctx.arc(q.x, q.y, 3, 0, Math.PI * 2); ctx.fill();
+      s.geo.bones.forEach((b, k) => {
+        if (k === 0 || k === s.geo.bones.length - 1) return;
+        const q = toScreen(b.x + s.geo.normal.x * s.disp[k], b.y + s.geo.normal.y * s.disp[k]);
+        ctx.beginPath(); ctx.arc(q.x, q.y, 3, 0, Math.PI * 2); ctx.fill();
+      });
     });
   }
 }
@@ -1621,7 +1640,9 @@ document.querySelectorAll('[data-param]').forEach((inp) => {
   inp.addEventListener('input', () => {
     const v = Number(inp.value);
     if (inp.value === '' || !Number.isFinite(v)) return;
-    state.chain.params[inp.dataset.param] = /^mesh/.test(inp.dataset.param) ? Math.max(2, Math.round(v)) : Math.max(0, v);
+    const key = inp.dataset.param;
+    state.chain.params[key] = /^mesh/.test(key) ? Math.max(2, Math.round(v))
+      : key === 'chainBones' ? Math.max(1, Math.round(v)) : Math.max(0, v);
     document.querySelectorAll(`[data-show="${inp.dataset.param}"]`).forEach((sp) => { sp.textContent = inp.value; });
     updateScrubRange();
     drawGrid();
@@ -1959,7 +1980,8 @@ async function sampleProject() {
     flipbookDir: `${base}/fbf`,
     style: 'chain',
     chain: {
-      params: { ...CHAIN_DEFAULTS },
+      // the sample strips end in half links, so they join up without overlap
+      params: { ...CHAIN_DEFAULTS, overlap: 0 },
       images: {
         s1: chainImg('chain_1'), s1Light: chainImg('chain_1_light'),
         s2: chainImg('chain_2'), s2Light: chainImg('chain_2_light'),

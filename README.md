@@ -38,10 +38,14 @@ Tab ở cột phải chọn kiểu đang xem / chỉnh (cả 2 kiểu dùng chun
   và 1 clipping mask. Anim tự tạo giống file mẫu 9687_VFX_Payline: mask mở từ trái qua phải,
   dây rung lần lượt từng đoạn, lớp sáng tắt dần, rồi mask ẩn về bên phải. Mọi thông số (độ võng,
   chồng mép, biên độ / độ trễ / thời gian rung, ánh sáng, mask) chỉnh ở cột phải.
+  - **Rung**: mỗi đoạn có 3–6 bone (Số bone mỗi đoạn) nằm dọc theo dây, rung theo hướng vuông góc với dây
+    (mạnh nhất giữa đoạn, 2 đầu đứng yên), lan dần từ trái qua phải, nên mắt xích không bị giãn.
   - Ảnh dây là ảnh **thẳng**, nạp được 3 độ dài: **Ngắn / Vừa / Dài** (VD Line_1 / Line_2 / Line_3), mỗi loại
     kèm 1 **ảnh sáng** (bề dày riêng). Mỗi đoạn tự dùng ảnh có chiều dài gần với đoạn nhất. App tự uốn
     ảnh theo **Độ võng**; **Số hàng mesh** chia dọc theo dây, **Số cột mesh** chia theo bề dày.
   - Ô số: giữ chuột và kéo qua lại để đổi giá trị (bấm 1 lần để gõ số).
+
+Phím **Space**: play / pause preview ở bất cứ đâu (trừ lúc đang gõ trong ô chữ / ô số).
 
 Lưới: lăn chuột để zoom, giữ chuột giữa để kéo, phím **F** để về khung ban đầu.
 

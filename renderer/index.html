@@ -92,7 +92,7 @@
           <canvas id="previewCanvas"></canvas>
         </div>
         <div class="playbar">
-          <button class="play" id="btnPlayPause" title="Play / Pause">▶</button>
+          <button class="play" id="btnPlayPause" title="Play / Pause (Space)">▶</button>
           <input type="range" id="scrubBar" min="0" max="0" value="0" step="1" />
         </div>
         <div class="drop">
@@ -159,6 +159,8 @@
           <input type="range" data-param="sag" min="0" max="120" step="1" value="20" />
           <label class="fl">Chồng mép <b><span data-show="overlap">12</span>px</b></label>
           <input type="range" data-param="overlap" min="0" max="60" step="1" value="12" />
+          <label class="fl">Số bone mỗi đoạn <b data-show="chainBones">4</b></label>
+          <input type="range" data-param="chainBones" min="3" max="6" step="1" value="4" />
           <label class="fl">Số hàng mesh <b data-show="meshCols">9</b></label>
           <input type="range" data-param="meshCols" min="2" max="60" step="1" value="9" />
           <label class="fl">Số cột mesh <b data-show="meshRows">2</b></label>
