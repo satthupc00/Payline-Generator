@@ -1,7 +1,8 @@
 import { buildGridLayout } from './modules/grid.js';
 import { buildCurve, buildRigSamples, computeTangents, getHandleVectors, computeAutoTangents } from './modules/spline.js';
 import { buildRibbonMesh, skinVertices } from './modules/mesh.js';
-import { packFrames, buildAtlasText, pageFileName } from './modules/atlasPacker.js';
+import { packFrames, packImages, buildAtlasText, pageFileName } from './modules/atlasPacker.js';
+import { CHAIN_DEFAULTS, segmentKind, segmentGeometry, chainDuration, chainStateAt, buildChainSpineJson } from './modules/chain.js';
 import { buildSpineJson } from './modules/spineExport.js';
 
 // ---------------- state ----------------
@@ -93,6 +94,12 @@ const state = {
   baseName: 'Payline',
   outputPath: '',
   flipbookDir: null,   // folder the flipbook was loaded from (saved in the project file)
+  style: 'fbf',        // which payline style the right panel / preview show: 'fbf' | 'chain'
+  chain: {
+    params: { ...CHAIN_DEFAULTS },
+    // strip images per direction + their light overlays: { path, name, img } or null
+    images: { h: null, hLight: null, d: null, dLight: null, v: null, vLight: null }
+  },
   playing: false,
   scrubIndex: 0,
   mesh: null,
@@ -238,7 +245,9 @@ function drawGrid() {
     });
 
     const pts = patternPoints(pattern);
-    if (pts) {
+    if (pts && state.style === 'chain') {
+      drawChainOnGrid(ctx, pts);
+    } else if (pts) {
       if (!pattern.tangentOverrides || pattern.tangentOverrides.length !== pts.length) {
         pattern.tangentOverrides = new Array(pts.length).fill(null);
       }
@@ -349,6 +358,30 @@ function drawGrid() {
 
   ctx.restore();
   updateWarningBox(pattern);
+}
+
+// Chain style on the grid: each pair of points joined by a hanging curve.
+function drawChainOnGrid(ctx, pts) {
+  const sag = state.chain.params.sag;
+  ctx.strokeStyle = '#ECE8E0';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = 'rgba(236,232,224,.45)';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    // control point 2×sag below the middle → the curve's middle hangs `sag` px (y down here)
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 + 2 * sag, b.x, b.y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  pts.forEach((p) => {
+    ctx.fillStyle = '#F2B84B';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function gridFillOpacity() {
@@ -704,7 +737,7 @@ function renderPatternList() {
     row.innerHTML = `
       <span class="idx">${String(i + 1).padStart(2, '0')}</span>
       <span class="name">${escapeHtml(p.name)}</span>
-      ${p.warn ? '<span class="warn" title="Khúc cong quá gắt">▲</span>' : ''}
+      ${p.warn && state.style === 'fbf' ? '<span class="warn" title="Khúc cong quá gắt">▲</span>' : ''}
       <span class="row-actions">
         <button class="ib" data-act="clone" title="Nhân bản">${ICON_CLONE}</button>
         <button class="ib del" data-act="delete" title="Xoá">${ICON_DELETE}</button>
@@ -794,9 +827,8 @@ el('btnImportFlipbook').addEventListener('click', async () => {
 async function applyFlipbook(files) {
   state.flipbook = await Promise.all(files.map((f) => loadImage(f.dataUrl).then((img) => ({ name: baseNameNoExt(f.name), img }))));
   state.flipbookDir = files.length ? parentDir(files[0].path) : null;
-  el('scrubBar').max = String(Math.max(0, state.flipbook.length - 1));
-  el('scrubBar').value = '0';
   state.scrubIndex = 0;
+  updateScrubRange();
   rebuildMesh();
   const btn = el('btnImportFlipbook');
   btn.classList.toggle('imported', !!state.flipbook.length);
@@ -1046,6 +1078,11 @@ function serializeProject() {
       trimAtlas: state.trimAtlas, outputPath: state.outputPath
     },
     flipbookDir: state.flipbookDir || null,
+    style: state.style,
+    chain: {
+      params: state.chain.params,
+      images: Object.fromEntries(Object.entries(state.chain.images).map(([k, r]) => [k, r ? r.path : null]))
+    },
     background: bg ? {
       path: bg.path, x: bg.x, y: bg.y, scale: bg.scale,
       visible: state.bgVisible
@@ -1064,9 +1101,9 @@ function displayName() {
   return n ? n.replace(/\.payline$/i, '') : NEW_FILE_NAME;
 }
 
-// Which pattern is selected is saved, but just clicking another one isn't an edit.
+// Which animation / style tab is selected is saved, but just clicking another one isn't an edit.
 function snapshot() {
-  return JSON.stringify({ ...serializeProject(), activePattern: 0 });
+  return JSON.stringify({ ...serializeProject(), activePattern: 0, style: '' });
 }
 
 function isDirty() {
@@ -1152,12 +1189,26 @@ async function applyProject(data) {
       missing.push(`ảnh nền (${bg.path})`);
     }
   }
+  // chain style: parameters + strip images (re-read from disk)
+  const ch = data.chain || {};
+  state.chain.params = { ...CHAIN_DEFAULTS, ...(ch.params || {}) };
+  for (const slot of Object.keys(state.chain.images)) {
+    const pth = ch.images && ch.images[slot];
+    state.chain.images[slot] = null;
+    if (!pth) continue;
+    const f = await window.paylineAPI.readImageFile(pth);
+    if (f) await setChainImage(slot, f);
+    else missing.push(`ảnh dây (${pth})`);
+  }
+  syncChainImageButtons();
+  syncChainParamInputs();
+
   syncBackgroundUI();
   syncControlsFromState();
   if (!state.patterns.length) addPattern(null);
   state.patterns.forEach(recomputeWarning);
   syncBoneSliderMin();
-  renderAll();
+  setStyle(data.style || 'fbf'); // also re-renders
   return missing;
 }
 
@@ -1253,6 +1304,10 @@ function drawPreview() {
 
   const pattern = activePattern();
   const pts = pattern ? patternPoints(pattern) : null;
+  if (state.style === 'chain') {
+    drawChainPreview(ctx, rect, pts);
+    return;
+  }
   if (!pattern || !pts || !state.mesh || !state.flipbook.length) {
     el('frameLabel').textContent = 'frame 0 / 0';
     return;
@@ -1329,6 +1384,197 @@ function drawPreview() {
   el('frameLabel').textContent = `frame ${frameIdx + 1} / ${state.flipbook.length}`;
 }
 
+// ==================================================================
+// Chain style ("Dây nối điểm")
+// ==================================================================
+const CHAIN_FPS = 30;
+const CHAIN_MASK_MARGIN = 60;
+
+function chainAvailable() {
+  const im = state.chain.images;
+  return { h: !!im.h, d: !!im.d, v: !!im.v };
+}
+function hasChainImages() {
+  const a = chainAvailable();
+  return a.h || a.d || a.v;
+}
+function chainSegCount() {
+  const p = activePattern();
+  const pts = p ? patternPoints(p) : null;
+  return pts ? pts.length - 1 : Math.max(1, state.gridConfig.reels - 1);
+}
+function chainFrameCount() {
+  return Math.ceil(chainDuration(chainSegCount(), state.chain.params) * CHAIN_FPS) + 1;
+}
+
+// Plays the chain animation of the active pattern in the preview panel.
+function drawChainPreview(ctx, rect, ptsPx) {
+  const total = chainFrameCount();
+  const frame = Math.min(state.scrubIndex, total - 1);
+  el('frameLabel').textContent = `frame ${frame + 1} / ${total}`;
+  if (!ptsPx || !hasChainImages()) {
+    ctx.fillStyle = '#5c616b';
+    ctx.font = '12px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(!hasChainImages() ? 'Chọn ảnh dây ở cột bên phải để xem trước' : 'Đặt đủ 1 điểm mỗi cột trên lưới', rect.width / 2, rect.height / 2);
+    ctx.textAlign = 'start';
+    return;
+  }
+  const params = state.chain.params;
+  const layout = buildGridLayout(state.gridConfig);
+  // y-up like Spine (geometry helpers assume it), centred on the grid
+  const pts = ptsPx.map((p) => ({ x: p.x - layout.totalW / 2, y: -(p.y - layout.totalH / 2) }));
+  const anim = chainStateAt(pts.length - 1, params, frame / CHAIN_FPS);
+
+  const halfW = layout.totalW / 2 + CHAIN_MASK_MARGIN;
+  const halfH = layout.totalH / 2 + CHAIN_MASK_MARGIN;
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const pad = 70;
+  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
+  const minY = Math.min(...ys) - pad - params.sag, maxY = Math.max(...ys) + pad;
+  const scale = Math.min((rect.width - 20) / (maxX - minX), (rect.height - 20) / (maxY - minY), 1.6) * state.previewZoom;
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const toScreen = (x, y) => ({
+    x: (x - cx) * scale + rect.width / 2 + state.previewPan.x,
+    y: -(y - cy) * scale + rect.height / 2 + state.previewPan.y
+  });
+
+  ctx.save();
+  // mask: open part between the left and right edges
+  const mL = toScreen(-halfW + anim.maskLeft * halfW * 2, halfH);
+  const mR = toScreen(-halfW + anim.maskRight * halfW * 2, -halfH);
+  ctx.beginPath();
+  ctx.rect(mL.x, mL.y, Math.max(0, mR.x - mL.x), mR.y - mL.y);
+  ctx.clip();
+
+  const available = chainAvailable();
+  const segs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const kind = segmentKind(pts[i], pts[i + 1], params, available);
+    if (!kind) continue;
+    const imgRec = state.chain.images[kind];
+    const lightRec = state.chain.images[kind + 'Light'];
+    const geo = segmentGeometry(pts[i], pts[i + 1], { w: imgRec.img.naturalWidth, h: imgRec.img.naturalHeight }, params);
+    const lift = 2 * anim.mid[i]; // middle bone moves twice the visible amount
+    const verts = geo.verts.map((v) => toScreen(v.x, v.y + v.w[1] * lift));
+    segs.push({ i, geo, verts, imgRec, lightRec });
+  }
+  const drawStrip = (img, s) => {
+    const t = s.geo.triangles;
+    const src = (k) => ({ x: s.geo.verts[k].u * img.naturalWidth, y: s.geo.verts[k].v * img.naturalHeight });
+    for (let k = 0; k < t.length; k += 3) {
+      drawTriangleImage(ctx, img, src(t[k]), src(t[k + 1]), src(t[k + 2]), s.verts[t[k]], s.verts[t[k + 1]], s.verts[t[k + 2]]);
+    }
+  };
+  segs.forEach((s) => drawStrip(s.imgRec.img, s));
+  segs.forEach((s) => {
+    if (!s.lightRec || anim.light[s.i] <= 0.001) return;
+    ctx.globalAlpha = anim.light[s.i];
+    drawStrip(s.lightRec.img, s);
+    ctx.globalAlpha = 1;
+  });
+  ctx.restore();
+
+  if (state.showMeshWire) {
+    ctx.save();
+    ctx.globalAlpha = state.meshOpacity / 100;
+    ctx.strokeStyle = 'rgba(53,228,245,.7)';
+    segs.forEach((s) => {
+      const t = s.geo.triangles;
+      for (let k = 0; k < t.length; k += 3) {
+        const a = s.verts[t[k]], b = s.verts[t[k + 1]], c = s.verts[t[k + 2]];
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath(); ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+  if (state.showBones) {
+    ctx.fillStyle = '#E5383B';
+    pts.forEach((p) => { const q = toScreen(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
+    ctx.fillStyle = '#F2B84B';
+    segs.forEach((s) => {
+      const q = toScreen(s.geo.ctrl.x, s.geo.ctrl.y + 2 * anim.mid[s.i]);
+      ctx.beginPath(); ctx.arc(q.x, q.y, 3, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+}
+
+// Scrub bar range follows the style: flipbook frames, or the chain animation's frames at 30 fps.
+function updateScrubRange() {
+  const max = state.style === 'chain' ? chainFrameCount() - 1 : Math.max(0, state.flipbook.length - 1);
+  el('scrubBar').max = String(max);
+  if (state.scrubIndex > max) state.scrubIndex = 0;
+  el('scrubBar').value = String(state.scrubIndex);
+}
+
+function setStyle(style) {
+  state.style = style === 'chain' ? 'chain' : 'fbf';
+  document.querySelectorAll('#styleTabs button').forEach((b) => b.classList.toggle('on', b.dataset.style === state.style));
+  el('fbfSettings').hidden = state.style !== 'fbf';
+  el('chainSettings').hidden = state.style !== 'chain';
+  el('btnImportFlipbook').hidden = state.style !== 'fbf';
+  state.scrubIndex = 0;
+  updateScrubRange();
+  renderAll();
+}
+document.querySelectorAll('#styleTabs button').forEach((b) => b.addEventListener('click', () => setStyle(b.dataset.style)));
+
+// --- chain images (one button per direction + light) ---
+function syncChainImageButtons() {
+  document.querySelectorAll('.cimg').forEach((b) => {
+    const rec = state.chain.images[b.dataset.slot];
+    const isLight = b.classList.contains('light');
+    b.classList.toggle('set', !!rec);
+    b.textContent = rec ? rec.name : (isLight ? 'Ảnh sáng' : 'Chọn ảnh');
+    b.title = rec ? `${rec.path}\nChuột phải để bỏ ảnh` : (isLight ? 'Ảnh lớp sáng phủ lên dây (không bắt buộc)' : 'Chọn ảnh đoạn dây');
+  });
+}
+async function setChainImage(slot, f) {
+  if (!f) { state.chain.images[slot] = null; return; }
+  const img = await loadImage(f.dataUrl);
+  state.chain.images[slot] = { path: f.path, name: baseNameNoExt(f.name), img };
+}
+document.querySelectorAll('.cimg').forEach((b) => {
+  b.addEventListener('click', async () => {
+    const f = await window.paylineAPI.openSingleImage();
+    if (!f) return;
+    await setChainImage(b.dataset.slot, f);
+    syncChainImageButtons();
+    updateScrubRange();
+    renderAll();
+  });
+  b.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    state.chain.images[b.dataset.slot] = null;
+    syncChainImageButtons();
+    renderAll();
+  });
+});
+
+// --- chain parameters (sliders + number boxes share data-param) ---
+function syncChainParamInputs() {
+  const p = state.chain.params;
+  document.querySelectorAll('[data-param]').forEach((inp) => { inp.value = p[inp.dataset.param]; });
+  document.querySelectorAll('[data-show]').forEach((sp) => { sp.textContent = String(p[sp.dataset.show]); });
+}
+document.querySelectorAll('[data-param]').forEach((inp) => {
+  inp.addEventListener('input', () => {
+    const v = Number(inp.value);
+    if (inp.value === '' || !Number.isFinite(v)) return;
+    state.chain.params[inp.dataset.param] = Math.max(0, v);
+    document.querySelectorAll(`[data-show="${inp.dataset.param}"]`).forEach((sp) => { sp.textContent = inp.value; });
+    updateScrubRange();
+    drawGrid();
+    drawPreview();
+  });
+});
+el('btnChainDefaults').addEventListener('click', () => {
+  state.chain.params = { ...CHAIN_DEFAULTS };
+  syncChainParamInputs();
+  updateScrubRange();
+  renderAll();
+});
+
 function skinVerticesScreenSpace(mesh, boneScreenPos, scale) {
   return mesh.weights.map((vw) => {
     let x = 0, y = 0;
@@ -1394,8 +1640,9 @@ el('btnPlayPause').addEventListener('click', () => {
   el('btnPlayPause').textContent = state.playing ? '⏸' : '▶';
   if (state.playing) {
     playTimer = setInterval(() => {
-      if (!state.flipbook.length) return;
-      state.scrubIndex = (state.scrubIndex + 1) % state.flipbook.length;
+      const count = state.style === 'chain' ? chainFrameCount() : state.flipbook.length;
+      if (!count) return;
+      state.scrubIndex = (state.scrubIndex + 1) % count;
       el('scrubBar').value = String(state.scrubIndex);
       drawPreview();
     }, 1000 / 30);
@@ -1421,19 +1668,59 @@ el('trimAtlas').addEventListener('change', (e) => {
   state.trimAtlas = e.target.checked;
 });
 
-el('btnExportAll').addEventListener('click', async () => {
-  if (!state.flipbook.length) return toast('Chưa import flipbook.');
+// "Export…" opens a dialog to pick the style(s); each one is its own json + atlas + png.
+const CHAIN_SUFFIX = '_Chain';
+el('btnExportAll').addEventListener('click', () => {
   if (!state.outputPath) return toast('Chưa chọn output folder.');
-  const exportable = state.patterns.filter((p) => patternPoints(p));
-  if (!exportable.length) return toast('Chưa có pattern hợp lệ nào (đủ 1 điểm/reel).');
+  if (!state.patterns.some((p) => patternPoints(p))) return toast('Chưa có animation hợp lệ nào (đủ 1 điểm mỗi cột).');
+  const fbfOk = state.flipbook.length > 0;
+  const chainOk = hasChainImages();
+  el('expFbf').disabled = !fbfOk;
+  el('expChain').disabled = !chainOk;
+  el('expFbf').checked = fbfOk;
+  el('expChain').checked = chainOk;
+  el('expFbf').closest('.exp-opt').classList.toggle('off', !fbfOk);
+  el('expChain').closest('.exp-opt').classList.toggle('off', !chainOk);
+  el('expFbfInfo').textContent = fbfOk ? `${state.skeletonName}.json` : 'Chưa import chuỗi ảnh fbf';
+  el('expChainInfo').textContent = chainOk ? `${state.skeletonName}${CHAIN_SUFFIX}.json` : 'Chưa chọn ảnh dây';
+  if (!fbfOk && !chainOk) return toast('Chưa có chuỗi ảnh fbf hay ảnh dây nào để export.');
+  el('exportModal').style.display = 'flex';
+});
+el('btnCancelExport').addEventListener('click', () => { el('exportModal').style.display = 'none'; });
+el('btnDoExport').addEventListener('click', async () => {
+  const doFbf = el('expFbf').checked && !el('expFbf').disabled;
+  const doChain = el('expChain').checked && !el('expChain').disabled;
+  if (!doFbf && !doChain) return toast('Hãy chọn ít nhất 1 kiểu để export.');
+  el('exportModal').style.display = 'none';
+  const done = [];
+  try {
+    if (doFbf) done.push(await exportFbf());
+    if (doChain) done.push(await exportChain());
+  } catch (err) {
+    return toast(`Lỗi export: ${err.message || err}`);
+  }
+  toast(`Đã export vào ${state.outputPath}: ${done.join(' · ')}`);
+});
 
+function exportGridInfo() {
   const layout = buildGridLayout(state.gridConfig);
-  const gridRect = { width: layout.totalW, height: layout.totalH };
-  const gridCenter = { x: gridRect.width / 2, y: gridRect.height / 2 };
+  return { layout, gridCenter: { x: layout.totalW / 2, y: layout.totalH / 2 } };
+}
 
+async function writeBundle(baseName, json, atlasText, pages) {
+  const pngPages = pages.map((page, i) => ({ fileName: pageFileName(baseName, i), dataUrl: page.canvas.toDataURL('image/png') }));
+  const res = await window.paylineAPI.exportBundle({
+    outputDir: state.outputPath, baseName, jsonText: JSON.stringify(json, null, 2), atlasText, pngPages
+  });
+  if (!res.ok) throw new Error(res.error);
+  return pngPages.length;
+}
+
+async function exportFbf() {
+  const exportable = state.patterns.filter((p) => patternPoints(p));
+  const { gridCenter } = exportGridInfo();
   const pack = packFrames(state.flipbook.map((f) => ({ name: f.name, img: f.img })), 2, 2048, state.trimAtlas);
   const atlasText = buildAtlasText(state.skeletonName, pack);
-
   const patternsForExport = exportable.map((p) => ({
     id: p.id,
     name: p.name,
@@ -1443,11 +1730,9 @@ el('btnExportAll').addEventListener('click', async () => {
     tangentOverrides: p.tangentOverrides,
     lead: leadLength()
   }));
-
   // Trim may have cut empty rows off the frames: the exported mesh is built
   // at the packed frame size so it exactly covers each atlas region.
   const exportMesh = buildRibbonMesh(pack.frameW, pack.frameH, state.mesh.boneCount, state.density, state.gridRows, leadLength() <= 0);
-
   const { json } = buildSpineJson({
     skeletonName: state.skeletonName,
     frameNames: state.flipbook.map((f) => f.name),
@@ -1459,23 +1744,50 @@ el('btnExportAll').addEventListener('click', async () => {
     fps: 30,
     additiveBlend: true
   });
+  const pages = await writeBundle(state.skeletonName, json, atlasText, pack.pages);
+  return `${exportable.length} anim chuỗi ảnh fbf${pages > 1 ? ` (${pages} trang PNG)` : ''}`;
+}
 
-  const pngPages = pack.pages.map((page, i) => ({
-    fileName: pageFileName(state.skeletonName, i),
-    dataUrl: page.canvas.toDataURL('image/png')
-  }));
-
-  const res = await window.paylineAPI.exportBundle({
-    outputDir: state.outputPath,
-    baseName: state.skeletonName,
-    jsonText: JSON.stringify(json, null, 2),
-    atlasText,
-    pngPages
+async function exportChain() {
+  const exportable = state.patterns.filter((p) => patternPoints(p));
+  const { layout, gridCenter } = exportGridInfo();
+  const baseName = state.skeletonName + CHAIN_SUFFIX;
+  // pack only the images in use; region names must be unique in the atlas
+  const used = [];
+  const images = {};
+  const regionOf = (rec) => {
+    let found = used.find((u) => u.rec === rec);
+    if (!found) {
+      let name = rec.name, k = 2;
+      while (used.some((u) => u.name === name)) name = `${rec.name}_${k++}`;
+      found = { rec, name };
+      used.push(found);
+    }
+    return found.name;
+  };
+  ['h', 'd', 'v'].forEach((kind) => {
+    const rec = state.chain.images[kind];
+    if (!rec) { images[kind] = null; return; }
+    const light = state.chain.images[kind + 'Light'];
+    images[kind] = {
+      region: regionOf(rec), w: rec.img.naturalWidth, h: rec.img.naturalHeight,
+      light: light ? { region: regionOf(light) } : null
+    };
   });
-
-  const pageNote = pngPages.length > 1 ? ` (chia ${pngPages.length} trang PNG do vượt 2048px)` : '';
-  toast(res.ok ? `Đã export ${exportable.length} animation vào ${state.outputPath}${pageNote}` : `Lỗi export: ${res.error}`);
-});
+  const pack = packImages(used.map((u) => ({ name: u.name, img: u.rec.img })), 2, 2048);
+  const atlasText = buildAtlasText(baseName, pack);
+  const json = buildChainSpineJson({
+    skeletonName: baseName,
+    patterns: exportable.map((p) => ({ name: p.name, points: patternPoints(p) })),
+    images,
+    params: state.chain.params,
+    gridCenter,
+    gridSize: { w: layout.totalW, h: layout.totalH },
+    margin: CHAIN_MASK_MARGIN
+  });
+  await writeBundle(baseName, json, atlasText, pack.pages);
+  return `${exportable.length} anim dây nối điểm`;
+}
 
 function toast(msg) {
   const t = document.createElement('div');
@@ -1535,10 +1847,55 @@ document.addEventListener('pointerdown', (e) => {
   setTimeout(() => sp.remove(), 520);
 });
 
+// The sample project: images that ship inside the app (renderer/sample), both styles set up.
+async function sampleProject() {
+  const base = await window.paylineAPI.samplePath();
+  const chainImg = (n) => `${base}/chain/${n}.png`;
+  return {
+    type: PROJECT_TYPE,
+    version: 1,
+    gridConfig: { reels: 5, rowsPerReel: [3, 3, 3, 3, 3], cellW: 110, cellH: 110, gap: 0, strokeColor: '#4a4f58', fillOpacity: 10, lead: 60 },
+    patterns: [
+      { name: 'Payline_01', points: [1, 1, 1, 1, 1], tension: 55 },
+      { name: 'Payline_02', points: [0, 1, 2, 1, 0], tension: 55 },
+      { name: 'Payline_03', points: [2, 1, 0, 1, 2], tension: 55 },
+      { name: 'Payline_04', points: [0, 0, 1, 2, 2], tension: 55 },
+      { name: 'Payline_05', points: [2, 0, 2, 0, 2], tension: 55 }
+    ],
+    activePattern: 1,
+    settings: { skeletonName: 'PayLine_Sample', baseName: 'Payline' },
+    flipbookDir: `${base}/fbf`,
+    style: 'chain',
+    chain: {
+      params: { ...CHAIN_DEFAULTS },
+      images: {
+        h: chainImg('chain_ngang'), hLight: chainImg('chain_ngang_light'),
+        d: chainImg('chain_cheo'), dLight: chainImg('chain_cheo_light'),
+        v: chainImg('chain_doc'), vLight: chainImg('chain_doc_light')
+      }
+    },
+    background: null
+  };
+}
+
+const closeStart = () => { el('startModal').style.display = 'none'; };
+el('startBlank').addEventListener('click', closeStart);
+el('startSample').addEventListener('click', async () => {
+  closeStart();
+  await applyProject(await sampleProject());
+  currentFilePath = null;
+  markSaved();
+  toast('Đã mở file mẫu: bấm tab "Chuỗi ảnh fbf" / "Dây nối điểm" để xem 2 kiểu.');
+});
+el('startOpen').addEventListener('click', () => { closeStart(); el('btnOpenProject').click(); });
+
 (async function init() {
   addPattern(null);
   syncBoneSliderMin();
   el('boneCountSlider').disabled = state.boneAuto;
-  renderAll();
+  syncChainImageButtons();
+  syncChainParamInputs();
+  setStyle('fbf');
   markSaved();
+  el('startModal').style.display = 'flex';
 })();

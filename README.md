@@ -29,6 +29,26 @@ GitHub token có quyền ghi vào repo **Spine_Preview** (cách tạo token: xem
 README của Spine Preview). Token được lưu riêng cho từng app, nên ở app này
 cần đăng nhập Admin một lần nữa.
 
+## 2 kiểu payline
+
+Tab ở cột phải chọn kiểu đang xem / chỉnh (cả 2 kiểu dùng chung lưới và danh sách Animations):
+
+- **Chuỗi ảnh fbf**: 1 dải mesh dài chạy dọc đường cong, phát chuỗi ảnh frame-by-frame.
+- **Dây nối điểm**: mỗi cặp điểm cạnh nhau nối bằng 1 đoạn dây (mesh) có độ võng, kèm lớp sáng
+  và 1 clipping mask. Anim tự tạo giống file mẫu 9687_VFX_Payline: mask mở từ trái qua phải,
+  dây rung lần lượt từng đoạn, lớp sáng tắt dần, rồi mask ẩn về bên phải. Mọi thông số (độ võng,
+  chồng mép, biên độ / độ trễ / thời gian rung, ánh sáng, mask) chỉnh ở cột phải.
+  - Ảnh dây gồm 3 loại theo góc của đoạn: **Ngang** (≤ 25°), **Chéo**, **Dọc** (≥ 65°), mỗi loại có thể
+    kèm 1 **ảnh sáng**. Thiếu loại nào thì đoạn đó dùng loại gần nhất đang có. Ảnh dọc là ảnh dựng đứng.
+
+**Export…** hỏi xuất kiểu nào (chọn được cả 2): kiểu fbf ra `<Tên skeleton>.json/.atlas/.png`,
+kiểu dây ra `<Tên skeleton>_Chain.json/.atlas/.png`.
+
+## Mở app
+
+Mỗi lần mở app sẽ hỏi: **File trống**, **File mẫu** (có sẵn ảnh mẫu cho cả 2 kiểu payline để xem thử)
+hoặc **Mở file…** (.payline đã lưu). Ảnh của file mẫu nằm trong `renderer/sample/` (ảnh tự vẽ, không phải ảnh dự án).
+
 ## Lưu / mở file làm việc (.payline)
 
 Tên file đang làm hiện ngay sau tiêu đề app: "Mondiro Payline Generator - New_Payline".

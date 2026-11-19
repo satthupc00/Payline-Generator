@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('paylineAPI', {
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
   openProject: () => ipcRenderer.invoke('project:open'),
   setDirty: (dirty) => ipcRenderer.send('project:dirty', !!dirty),
+  samplePath: () => ipcRenderer.invoke('app:samplePath'),
   // full path of a file/folder dropped onto the window
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } }
 });

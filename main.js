@@ -176,6 +176,9 @@ ipcMain.handle('fs:exportBundle', async (evt, { outputDir, baseName, jsonText, a
   }
 });
 
+// Folder of the sample project's images (inside the app; readable from app.asar too).
+ipcMain.handle('app:samplePath', () => path.join(__dirname, 'renderer', 'sample'));
+
 // ---- IPC: project file (.payline) — the whole working session ----
 
 const PROJECT_FILTERS = [{ name: 'Payline project', extensions: ['payline'] }];

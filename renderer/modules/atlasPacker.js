@@ -157,3 +157,27 @@ export function buildAtlasText(baseName, packResult) {
 export function pageFileName(baseName, pageIndex) {
   return pageIndex === 0 ? `${baseName}.png` : `${baseName}_${pageIndex + 1}.png`;
 }
+
+// Packs a few images of different sizes (the chain strips and their lights)
+// as-is, no trimming. images: [{ name, img }]. Same result shape as packFrames.
+export function packImages(images, padding = 2, maxPageSize = 2048) {
+  const rects = images.map((f) => ({
+    name: f.name, img: f.img, sx: 0, sy: 0, sw: f.img.naturalWidth, sh: f.img.naturalHeight,
+    offX: 0, offY: 0, origW: f.img.naturalWidth, origH: f.img.naturalHeight
+  }));
+  const buckets = shelfPack(rects, padding, maxPageSize);
+  const pages = buckets.map((bucket) => {
+    const atlasW = Math.min(maxPageSize, roundUp4(bucket.maxX));
+    const atlasH = Math.min(maxPageSize, roundUp4(bucket.maxY));
+    const canvas = document.createElement('canvas');
+    canvas.width = atlasW;
+    canvas.height = atlasH;
+    const ctx = canvas.getContext('2d');
+    const placements = bucket.items.map((it) => {
+      ctx.drawImage(it.img, it.x, it.y);
+      return { name: it.name, x: it.x, y: it.y, w: it.sw, h: it.sh, offX: 0, offY: 0, origW: it.origW, origH: it.origH };
+    });
+    return { canvas, atlasW, atlasH, placements };
+  });
+  return { pages };
+}

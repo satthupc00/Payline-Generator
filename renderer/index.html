@@ -113,6 +113,12 @@
         <div class="hint">Xuất ra: <span id="baseNamePreview">Payline_01, _02, ...</span></div>
       </div>
 
+      <div class="style-tabs" id="styleTabs" role="tablist">
+        <button class="on" data-style="fbf" role="tab" title="Payline chạy bằng chuỗi ảnh frame-by-frame">Chuỗi ảnh fbf</button>
+        <button data-style="chain" role="tab" title="Payline là các đoạn dây nối giữa các điểm">Dây nối điểm</button>
+      </div>
+
+      <div id="fbfSettings">
       <div class="sec">
         <h3>Đường cong</h3>
         <label class="fl">Tension <b><span id="tensionVal">55</span>%</b></label>
@@ -135,6 +141,56 @@
         </div>
       </div>
 
+      </div>
+
+      <div id="chainSettings" hidden>
+        <div class="sec">
+          <h3>Ảnh dây</h3>
+          <div class="chain-imgs">
+            <span class="ck">Ngang</span><button class="btn sm cimg" data-slot="h">Chọn ảnh</button><button class="btn sm cimg light" data-slot="hLight">Ảnh sáng</button>
+            <span class="ck">Chéo</span><button class="btn sm cimg" data-slot="d">Chọn ảnh</button><button class="btn sm cimg light" data-slot="dLight">Ảnh sáng</button>
+            <span class="ck">Dọc</span><button class="btn sm cimg" data-slot="v">Chọn ảnh</button><button class="btn sm cimg light" data-slot="vLight">Ảnh sáng</button>
+          </div>
+          <div class="hint">Mỗi đoạn tự chọn ảnh theo góc: ngang ≤ 25°, dọc ≥ 65°, còn lại là chéo. Chuột phải vào ô ảnh để bỏ ảnh.</div>
+        </div>
+        <div class="sec">
+          <h3>Hình dây</h3>
+          <label class="fl">Độ võng <b><span data-show="sag">20</span>px</b></label>
+          <input type="range" data-param="sag" min="0" max="120" step="1" value="20" />
+          <label class="fl">Chồng mép <b><span data-show="overlap">12</span>px</b></label>
+          <input type="range" data-param="overlap" min="0" max="60" step="1" value="12" />
+        </div>
+        <div class="sec">
+          <h3>Rung</h3>
+          <label class="fl">Biên độ <b><span data-show="wobbleAmp">20</span>px</b></label>
+          <input type="range" data-param="wobbleAmp" min="0" max="80" step="1" value="20" />
+          <div class="pgrid">
+            <span>Trễ giữa các đoạn</span><input type="number" class="in" data-param="wobbleDelay" step="0.01" min="0" />
+            <span>Thời gian rung</span><input type="number" class="in" data-param="wobbleDur" step="0.05" min="0.05" />
+          </div>
+        </div>
+        <div class="sec">
+          <h3>Ánh sáng</h3>
+          <div class="pgrid">
+            <span>Bắt đầu tắt</span><input type="number" class="in" data-param="lightStart" step="0.05" min="0" />
+            <span>Trễ giữa các đoạn</span><input type="number" class="in" data-param="lightDelay" step="0.01" min="0" />
+            <span>Thời gian tắt</span><input type="number" class="in" data-param="lightFade" step="0.05" min="0.01" />
+          </div>
+        </div>
+        <div class="sec">
+          <h3>Mask</h3>
+          <div class="pgrid">
+            <span>Thời gian mở</span><input type="number" class="in" data-param="maskIn" step="0.05" min="0.01" />
+            <span>Bắt đầu ẩn</span><input type="number" class="in" data-param="maskHold" step="0.05" min="0" />
+            <span>Thời gian ẩn</span><input type="number" class="in" data-param="maskOut" step="0.05" min="0.01" />
+          </div>
+          <div class="row" style="margin-top:8px;justify-content:space-between;">
+            <span class="hint" style="margin:0;">Thời gian tính bằng giây.</span>
+            <button class="link" id="btnChainDefaults" title="Đưa các thông số dây về như file mẫu">↺ Về mặc định</button>
+          </div>
+        </div>
+      </div>
+
       <div class="sec export-sec">
         <h3>Export</h3>
         <label class="fl">Thư mục output</label>
@@ -145,7 +201,7 @@
         <label class="chk" style="margin-top:10px;" title="Cắt cùng 1 khoảng trống trên/dưới cho mọi frame, không cắt chiều ngang">
           <input type="checkbox" id="trimAtlas" checked /> Trim khoảng trống trên/dưới</label>
         <button class="btn primary export" id="btnExportAll" title="Xuất json + atlas + png">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M3 13.5h10"/></svg><span>Export all (<span id="exportCount">0</span>)</span></button>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M3 13.5h10"/></svg><span>Export… (<span id="exportCount">0</span>)</span></button>
       </div>
     </aside>
   </div>
@@ -190,6 +246,40 @@
     <div class="actions">
       <button class="btn ghost" id="btnCancelGridConfig">Huỷ</button>
       <button class="btn primary" id="btnApplyGridConfig">Áp dụng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export: choose which style(s) -->
+<div class="modal-overlay" id="exportModal" style="display:none;">
+  <div class="modal" style="width:400px;">
+    <h2>Export</h2>
+    <div class="hint" style="margin-bottom:6px;">Mỗi kiểu xuất ra 1 bộ json + atlas + png riêng.</div>
+    <label class="exp-opt"><input type="checkbox" id="expFbf" checked />
+      <span><b>Chuỗi ảnh fbf</b><small id="expFbfInfo"></small></span></label>
+    <label class="exp-opt"><input type="checkbox" id="expChain" checked />
+      <span><b>Dây nối điểm</b><small id="expChainInfo"></small></span></label>
+    <div class="actions">
+      <button class="btn ghost" id="btnCancelExport">Huỷ</button>
+      <button class="btn primary" id="btnDoExport">Export</button>
+    </div>
+  </div>
+</div>
+
+<!-- Start screen -->
+<div class="modal-overlay" id="startModal" style="display:none;">
+  <div class="modal start">
+    <h2>Bắt đầu</h2>
+    <div class="start-cards">
+      <button class="start-card" id="startBlank">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 6h16l8 8v28H13z"/><path d="M29 6v8h8"/></svg>
+        <b>File trống</b><small>Bắt đầu từ lưới trống</small></button>
+      <button class="start-card" id="startSample">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="10" width="36" height="28"/><path d="M6 19h36M6 28h36M18 10v28M30 10v28" opacity=".5"/><path d="M4 16 Q12 16 18 24 T30 24 T44 16" stroke="#E5383B" stroke-width="2.6"/></svg>
+        <b>File mẫu</b><small>Có sẵn 2 kiểu payline để xem thử</small></button>
+      <button class="start-card" id="startOpen">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13v25h38V17H23l-4-4z"/><path d="M24 22v11M19.5 28.5L24 33l4.5-4.5"/></svg>
+        <b>Mở file…</b><small>Mở file .payline đã lưu</small></button>
     </div>
   </div>
 </div>
