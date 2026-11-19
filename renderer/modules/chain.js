@@ -38,20 +38,27 @@ const WOBBLE_V = [0, 1, -0.3806, 0.7415, -0.2068, 0];
 const EASE = [0.25, 0, 0.75, 1];
 const MASK_OPEN_EASE = [0.282, 0, 1, 0.34];
 
-// Straight strip images in up to 3 lengths ("Ngắn / Vừa / Dài"); each segment
-// uses the one whose length is closest to the segment's, so links stretch least.
+// Straight strip images in up to 3 lengths ("Ngắn / Vừa / Dài"). On a grid the
+// segments are 1, √2, √5… cells long, so the strips are meant to be 1 : √2 : √5
+// of the shortest one (e.g. 5 / 7 / 11 links). Each segment picks by RATIO —
+// its length in cells vs the strip's length in shortest-strips — so the choice
+// doesn't depend on the cell size and every segment is scaled by the same
+// amount (= equal link size everywhere).
 export const CHAIN_SLOTS = ['s1', 's2', 's3'];
 
 const stripLength = (img) => Math.max(img.w, img.h);
 
-// images: { s1: { w, h } | null, ... } → the slot key to use, or null if none.
-export function pickStrip(p0, p1, params, images) {
-  const need = Math.hypot(p1.x - p0.x, p1.y - p0.y) + 2 * Math.max(0, params.overlap || 0);
+// images: { s1: { w, h } | null, ... }; unit: length of a one-cell (horizontal)
+// segment. Returns the slot key to use, or null if none.
+export function pickStrip(p0, p1, params, images, unit) {
+  const avail = CHAIN_SLOTS.filter((k) => images[k]);
+  if (!avail.length) return null;
+  const over = 2 * Math.max(0, params.overlap || 0);
+  const base = Math.min(...avail.map((k) => stripLength(images[k])));
+  const segRatio = (Math.hypot(p1.x - p0.x, p1.y - p0.y) + over) / ((unit || base) + over);
   let best = null, bestCost = Infinity;
-  for (const k of CHAIN_SLOTS) {
-    const img = images[k];
-    if (!img) continue;
-    const cost = Math.abs(Math.log(need / stripLength(img)));
+  for (const k of avail) {
+    const cost = Math.abs(Math.log(segRatio / (stripLength(images[k]) / base)));
     if (cost < bestCost) { bestCost = cost; best = k; }
   }
   return best;
@@ -252,7 +259,7 @@ const r5 = (n) => Math.round(n * 100000) / 100000;
 // patterns: [{ name, points: [{x,y}] in grid px (y down) }]
 // images: { s1, s2, s3 } each { region, w, h, light: { region, w, h } | null } or null
 // gridCenter / gridSize: grid px; the mask covers the grid plus a margin.
-export function buildChainSpineJson({ skeletonName, patterns, images, params, gridCenter, gridSize, margin = 60 }) {
+export function buildChainSpineJson({ skeletonName, patterns, images, params, gridCenter, gridSize, unit, margin = 60 }) {
   const toSpine = (p) => ({ x: p.x - gridCenter.x, y: -(p.y - gridCenter.y) });
   const bones = [{ name: 'root' }];
   const slots = [{ name: 'mask', bone: 'root', attachment: 'mask' }];
@@ -274,7 +281,7 @@ export function buildChainSpineJson({ skeletonName, patterns, images, params, gr
     const anim = { slots: {}, bones: {}, deform: { default: {} } };
     const segCount = pts.length - 1;
     for (let i = 0; i < segCount; i++) {
-      const kind = pickStrip(pts[i], pts[i + 1], params, images);
+      const kind = pickStrip(pts[i], pts[i + 1], params, images, unit);
       if (!kind) continue;
       const img = images[kind];
       const geo = segmentGeometry(pts[i], pts[i + 1], img, params);

@@ -1529,7 +1529,7 @@ function drawChainPreview(ctx, rect, ptsPx) {
     return { geo, img: rec.img, verts, disp };
   };
   for (let i = 0; i < pts.length - 1; i++) {
-    const kind = pickStrip(pts[i], pts[i + 1], params, sizes);
+    const kind = pickStrip(pts[i], pts[i + 1], params, sizes, state.gridConfig.cellW);
     if (!kind) continue;
     const lightRec = state.chain.images[kind + 'Light'];
     const base = strip(i, state.chain.images[kind]);
@@ -1896,6 +1896,7 @@ async function exportChain() {
     params: state.chain.params,
     gridCenter,
     gridSize: { w: layout.totalW, h: layout.totalH },
+    unit: state.gridConfig.cellW,
     margin: CHAIN_MASK_MARGIN
   });
   await writeBundle(baseName, json, atlasText, pack.pages);

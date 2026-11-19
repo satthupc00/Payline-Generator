@@ -40,9 +40,12 @@ Tab ở cột phải chọn kiểu đang xem / chỉnh (cả 2 kiểu dùng chun
   chồng mép, biên độ / độ trễ / thời gian rung, ánh sáng, mask) chỉnh ở cột phải.
   - **Rung**: mỗi đoạn có 3–6 bone (Số bone mỗi đoạn) nằm dọc theo dây, rung theo hướng vuông góc với dây
     (mạnh nhất giữa đoạn, 2 đầu đứng yên), lan dần từ trái qua phải, nên mắt xích không bị giãn.
-  - Ảnh dây là ảnh **thẳng**, nạp được 3 độ dài: **Ngắn / Vừa / Dài** (VD Line_1 / Line_2 / Line_3), mỗi loại
-    kèm 1 **ảnh sáng** (bề dày riêng). Mỗi đoạn tự dùng ảnh có chiều dài gần với đoạn nhất. App tự uốn
-    ảnh theo **Độ võng**; **Số hàng mesh** chia dọc theo dây, **Số cột mesh** chia theo bề dày.
+  - Ảnh dây là ảnh **thẳng**, nạp được 3 độ dài: **Ngắn / Vừa / Dài**, mỗi loại kèm 1 **ảnh sáng** (bề dày riêng).
+    Trên lưới, đoạn ngang dài 1 ô, đoạn chéo lệch 1 hàng dài √2 ≈ 1,41 ô, lệch 2 hàng dài √5 ≈ 2,24 ô, nên 3 ảnh
+    nên dài theo tỷ lệ **1 : 1,41 : 2,24** với cùng cỡ mắt xích, VD **5 / 7 / 11 mắt xích** (36px mỗi mắt:
+    180 / 252 / 396px). App chọn ảnh theo tỷ lệ (độ dài đoạn so với 1 ô ↔ độ dài ảnh so với ảnh Ngắn), nên
+    mọi đoạn co giãn cùng một mức và mắt xích đều nhau. App tự uốn ảnh theo **Độ võng**; **Số hàng mesh**
+    chia dọc theo dây, **Số cột mesh** chia theo bề dày.
   - Ô số: giữ chuột và kéo qua lại để đổi giá trị (bấm 1 lần để gõ số).
 
 Phím **Space**: play / pause preview ở bất cứ đâu (trừ lúc đang gõ trong ô chữ / ô số).
