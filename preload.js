@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('paylineAPI', {
   openSingleImage: () => ipcRenderer.invoke('dialog:openSingleImage'),
   chooseOutputFolder: () => ipcRenderer.invoke('dialog:chooseOutputFolder'),
   exportBundle: (payload) => ipcRenderer.invoke('fs:exportBundle', payload),
+  writeText: (payload) => ipcRenderer.invoke('fs:writeText', payload),
   readFlipbookFolder: (dir) => ipcRenderer.invoke('fs:readFlipbookFolder', dir),
   readImageFile: (p) => ipcRenderer.invoke('fs:readImageFile', p),
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),

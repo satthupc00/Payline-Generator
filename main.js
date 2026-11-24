@@ -160,16 +160,37 @@ ipcMain.handle('dialog:chooseOutputFolder', async () => {
   return res.filePaths[0];
 });
 
-ipcMain.handle('fs:exportBundle', async (evt, { outputDir, baseName, jsonText, atlasText, pngPages }) => {
+// Writes json + atlas + atlas pages, plus every region as its own PNG in
+// <outputDir>/Images (what a Spine project imports the json against).
+ipcMain.handle('fs:exportBundle', async (evt, { outputDir, baseName, jsonText, atlasText, pngPages, images = [] }) => {
   if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
+  const safe = (n) => path.basename(String(n)); // never write outside the chosen folder
   try {
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-    fs.writeFileSync(path.join(outputDir, `${baseName}.json`), jsonText, 'utf-8');
-    fs.writeFileSync(path.join(outputDir, `${baseName}.atlas`), atlasText, 'utf-8');
+    fs.writeFileSync(path.join(outputDir, `${safe(baseName)}.json`), jsonText, 'utf-8');
+    fs.writeFileSync(path.join(outputDir, `${safe(baseName)}.atlas`), atlasText, 'utf-8');
     for (const page of pngPages) {
       const base64 = page.dataUrl.split(',')[1];
-      fs.writeFileSync(path.join(outputDir, page.fileName), Buffer.from(base64, 'base64'));
+      fs.writeFileSync(path.join(outputDir, safe(page.fileName)), Buffer.from(base64, 'base64'));
     }
+    if (images.length) {
+      const imgDir = path.join(outputDir, 'Images');
+      fs.mkdirSync(imgDir, { recursive: true });
+      for (const img of images) {
+        fs.writeFileSync(path.join(imgDir, safe(img.fileName)), Buffer.from(img.dataUrl.split(',')[1], 'base64'));
+      }
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// A plain text file next to the export (the .bat that builds the Spine projects).
+ipcMain.handle('fs:writeText', async (evt, { outputDir, fileName, text }) => {
+  if (isLocked()) return { ok: false, error: 'App chưa được kích hoạt.' };
+  try {
+    fs.writeFileSync(path.join(outputDir, path.basename(String(fileName))), text, 'utf-8');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: String(err) };

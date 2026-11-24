@@ -54,6 +54,11 @@ Lưới: lăn chuột để zoom, giữ chuột giữa để kéo, phím **F** �
 
 **Export…** hỏi xuất kiểu nào (chọn được cả 2): kiểu fbf ra `<Tên skeleton>.json/.atlas/.png`,
 kiểu dây ra `<Tên skeleton>_Chain.json/.atlas/.png`.
+Mỗi lần export còn ghi thêm:
+- thư mục **`Images`** (cạnh file json): từng hình trong atlas được cắt ra thành PNG riêng;
+- file **`Rap_Spine.bat`**: bấm đúp để Spine 3.7.94 import các file json vừa xuất thành file **`.spine`**
+  hoàn chỉnh ngay tại thư mục đó (hình lấy từ `Images`). Bat tự tìm `Spine.com` trong
+  `C:\Program Files\Spine\`; cài chỗ khác thì mở bat bằng Notepad sửa dòng `set "SPINE=..."`.
 
 ## Mở app
 

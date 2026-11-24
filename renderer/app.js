@@ -1806,13 +1806,16 @@ el('btnDoExport').addEventListener('click', async () => {
   if (!doFbf && !doChain) return toast('Hãy chọn ít nhất 1 kiểu để export.');
   el('exportModal').style.display = 'none';
   const done = [];
+  const bases = [];
   try {
-    if (doFbf) done.push(await exportFbf());
-    if (doChain) done.push(await exportChain());
+    if (doFbf) { done.push(await exportFbf()); bases.push(state.skeletonName); }
+    if (doChain) { done.push(await exportChain()); bases.push(state.skeletonName + CHAIN_SUFFIX); }
+    const res = await window.paylineAPI.writeText({ outputDir: state.outputPath, fileName: SPINE_BAT, text: spineBatText(bases) });
+    if (!res.ok) throw new Error(res.error);
   } catch (err) {
     return toast(`Lỗi export: ${err.message || err}`);
   }
-  toast(`Đã export vào ${state.outputPath}: ${done.join(' · ')}`);
+  toast(`Đã export vào ${state.outputPath}: ${done.join(' · ')} · chạy ${SPINE_BAT} để ra file .spine`);
 });
 
 function exportGridInfo() {
@@ -1820,13 +1823,56 @@ function exportGridInfo() {
   return { layout, gridCenter: { x: layout.totalW / 2, y: layout.totalH / 2 } };
 }
 
+// Each atlas region cut back out as its own PNG (for the Images folder).
+function regionImages(pages) {
+  const out = [];
+  pages.forEach((page) => page.placements.forEach((p) => {
+    const c = document.createElement('canvas');
+    c.width = p.w; c.height = p.h;
+    c.getContext('2d').drawImage(page.canvas, p.x, p.y, p.w, p.h, 0, 0, p.w, p.h);
+    out.push({ fileName: `${p.name}.png`, dataUrl: c.toDataURL('image/png') });
+  }));
+  return out;
+}
+
 async function writeBundle(baseName, json, atlasText, pages) {
+  json.skeleton.images = './Images/'; // the Spine project finds its images there
   const pngPages = pages.map((page, i) => ({ fileName: pageFileName(baseName, i), dataUrl: page.canvas.toDataURL('image/png') }));
   const res = await window.paylineAPI.exportBundle({
-    outputDir: state.outputPath, baseName, jsonText: JSON.stringify(json, null, 2), atlasText, pngPages
+    outputDir: state.outputPath, baseName, jsonText: JSON.stringify(json, null, 2), atlasText, pngPages,
+    images: regionImages(pages)
   });
   if (!res.ok) throw new Error(res.error);
   return pngPages.length;
+}
+
+// Rap_Spine.bat: double-click to have Spine 3.7.94 import each exported json
+// into a .spine project next to it (images from the Images folder).
+const SPINE_BAT = 'Rap_Spine.bat';
+function spineBatText(baseNames) {
+  const lines = [
+    '@echo off',
+    'setlocal',
+    'rem Mondiro Payline Generator - rap json thanh file Spine (.spine)',
+    'rem Neu Spine cai o cho khac, sua dong "set SPINE=" ben duoi cho dung duong dan Spine.com',
+    'set "SPINE=%ProgramFiles%\\Spine\\Spine.com"',
+    'if not exist "%SPINE%" set "SPINE=%ProgramFiles(x86)%\\Spine\\Spine.com"',
+    'if not exist "%SPINE%" for /f "delims=" %%i in (\'where Spine.com 2^>nul\') do set "SPINE=%%i"',
+    'if not exist "%SPINE%" (',
+    '  echo Khong tim thay Spine.com. Mo file nay bang Notepad va sua dong "set SPINE=".',
+    '  pause',
+    '  exit /b 1',
+    ')',
+    'cd /d "%~dp0"',
+    ...baseNames.flatMap((b) => [
+      `echo Dang rap ${b}.spine ...`,
+      `"%SPINE%" -u 3.7.94 -i "${b}.json" -o "${b}.spine" -r`,
+      `if errorlevel 1 (echo Loi khi rap ${b}.spine) else (echo Xong: ${b}.spine)`
+    ]),
+    'echo.',
+    'pause'
+  ];
+  return lines.join('\r\n') + '\r\n';
 }
 
 async function exportFbf() {
