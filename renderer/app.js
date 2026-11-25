@@ -1846,14 +1846,14 @@ async function writeBundle(baseName, json, atlasText, pages) {
   return pngPages.length;
 }
 
-// Rap_Spine.bat: double-click to have Spine 3.7.94 import each exported json
+// Import_Spine.bat: double-click to have Spine 3.7.94 import each exported json
 // into a .spine project next to it (images from the Images folder).
-const SPINE_BAT = 'Rap_Spine.bat';
+const SPINE_BAT = 'Import_Spine.bat';
 function spineBatText(baseNames) {
   const lines = [
     '@echo off',
     'setlocal',
-    'rem Mondiro Payline Generator - rap json thanh file Spine (.spine)',
+    'rem Mondiro Payline Generator - import json thanh file Spine (.spine)',
     'rem Neu Spine cai o cho khac, sua dong "set SPINE=" ben duoi cho dung duong dan Spine.com',
     'set "SPINE=%ProgramFiles%\\Spine\\Spine.com"',
     'if not exist "%SPINE%" set "SPINE=%ProgramFiles(x86)%\\Spine\\Spine.com"',
